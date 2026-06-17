@@ -33,20 +33,33 @@ class LogUploader():
     """
 
     def __init__(self, queue_limit=1000):
+        # Prefer DB-stored ADX config (set via admin GUI); fall back to config.py
+        try:
+            from app.server.models import ADXConfig
+            adx_cfg = ADXConfig.query.get(1)
+        except Exception:
+            adx_cfg = None
+
+        def _cfg(db_val, config_key):
+            """Return DB value if set, otherwise fall back to app config."""
+            if db_val and str(db_val).strip():
+                return db_val.strip()
+            return current_app.config.get(config_key, "")
+
         # set Azure tenant config variables
-        self.AAD_TENANT_ID = current_app.config["AAD_TENANT_ID"]
-        self.KUSTO_URI = current_app.config["KUSTO_URI"]
-        self.KUSTO_INGEST_URI = current_app.config["KUSTO_INGEST_URI"]
-        self.DATABASE = current_app.config["DATABASE"]
+        self.AAD_TENANT_ID    = _cfg(adx_cfg.tenant_id    if adx_cfg else None, "AAD_TENANT_ID")
+        self.KUSTO_URI        = _cfg(adx_cfg.cluster_uri  if adx_cfg else None, "KUSTO_URI")
+        self.KUSTO_INGEST_URI = _cfg(adx_cfg.ingest_uri   if adx_cfg else None, "KUSTO_INGEST_URI")
+        self.DATABASE         = _cfg(adx_cfg.database      if adx_cfg else None, "DATABASE")
         self.CUSTOM_TYPES = [
                                 DNSRecord, Employee,
                                 OutboundEvent, FileCreationEvent, 
                                 Email, AuthenticationEvent, InboundBrowsingEvent, 
                                 ProcessEvent, SecurityAlert]
 
-        # Aauthenticate with AAD application.
-        self.client_id = current_app.config["CLIENT_ID"]
-        self.client_secret = current_app.config["CLIENT_SECRET"]
+        # Authenticate with AAD application.
+        self.client_id     = _cfg(adx_cfg.client_id     if adx_cfg else None, "CLIENT_ID")
+        self.client_secret = _cfg(adx_cfg.client_secret if adx_cfg else None, "CLIENT_SECRET")
 
         # authentication for ingestion client
         kcsb_ingest = KustoConnectionStringBuilder.with_aad_application_key_authentication(self.KUSTO_INGEST_URI,

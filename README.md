@@ -1,113 +1,197 @@
-![Admin Central button]
+# KC7 — A Cybersecurity Game
 
-# KC7 - a cybersecurity game (kc7cyber.com)
+KC7 is a cybersecurity training platform that lets players learn threat investigation and threat-intelligence skills using realistic simulated data. Players use **KQL (Kusto Query Language)** inside **Azure Data Explorer** to triage logs and uncover attacker activity across a fictitious company's environment spanning the full Cyber Kill Chain.
 
-KC7 allows you to learn the big picture of cybersecurity analysis and threat intelligence using realistic data. The game simulates an intrusion by multiple cyber threat actors against a fictitious company that spans the entire `Cyber Kill Chain`.
+Get started at http://kc7cyber.com/modules
 
-Get Started at http://kc7cyber.com/modules
+<img width="1378" alt="KC7 screenshot" src="https://github.com/KC7-Foundation/kc7/assets/9474932/e913abab-373f-45d0-9485-8005fde3c73e">
 
-<img width="1378" alt="image" src="https://github.com/KC7-Foundation/kc7/assets/9474932/e913abab-373f-45d0-9485-8005fde3c73e">
+---
 
+## 📖 Background
 
-Players use `Kust Query Langague (KQL)` queries to triage logs in `Azure Data Explorer` to:
-* Investigate suspicious activity in the company's environment
-* Pivot on known actor indicators to uncover additional selectors and find more intrusion activity
-
-Game players get experience triaging Web, Email, and Endpoint audit logs
-
-### How it works 
-
-<img src="readme_assets/how.png" width=700 >
-
-### Here's an example scenario
-<img src="readme_assets/example.png" width=700 >
-
-## 📖 Our Story
-
-[Read our background story](https://mem.ai/p/nlIjcw3yPTbb0DNDfPAI)
-
+[Read the origin story](https://mem.ai/p/nlIjcw3yPTbb0DNDfPAI)
 
 ## 👨🏽‍🎓 Who is this for?
 
-* High school and college **students** who have an interest in Cybersecurity
-* Anyone who wants to **reskill/change careers** into the cybersecurity field
-* Cybersecurity professionals looking to **uplevel** their pivoting and analysis skills
+- High school and college students interested in cybersecurity
+- Anyone looking to reskill or change careers into the field
+- Security professionals who want to level up their pivoting and analysis skills
 
+---
 
-## 🚨 🤾🏽‍♀️ Getting started with the data (No code required)!
+## 🚀 Getting Started
 
-* http://kc7cyber.com/modules
-
-Go and select one of our modules. We'll give you all the resources you need to get started.
-
-<img width="1510" alt="image" src="https://user-images.githubusercontent.com/9474932/227723286-3afaebc4-13b0-41aa-8e0c-df114f044fd1.png">
-
-## 🏁 Contribute to the code!
 ### Requirements
-* [Python 3 or higher](https://www.python.org/downloads/)
-* [Git Bash](https://git-scm.com/downloads)
+
+- Python 3.10+
+- Git
 
 ### Installation
-* Open a new bash terminal and clone the repo using the following command:
 
-```
-git clone https://github.com/kkneomis/cyber-challenger.git
-```
-
-* Install the required python packages
-```
+```bash
+git clone https://github.com/cybersheepdog/kc7.git
+cd kc7
+python -m venv venv
+source venv/bin/activate       # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
-NOTE: After running this command some packages may require manual installation. If the command in the next step fails due to a missing package, the following command can be used to install it:
 
-```
-pip install [PACKAGE_NAME]
-```
+### Running the app
 
-The package name may differ from the error message (for example: yaml is downloaded with the package name pyyaml)
-
-* Run the project
-```python
+```bash
 python app.py
 ```
 
-### Running the game
-* Access the Guid by browsing to your local server @ `http://127.0.0.1:5000/`
+Then open `http://127.0.0.1:8889/login` and log in with `admin` / `admin`.
 
-* Browsing to the Login page: `http://127.0.0.1:5000/login` and login to the adminitator account using default creds `admin:admin`
+> **Security note:** Change the default admin password before exposing the app to any network.
+> Set the `KC7_ADMIN_PASSWORD` environment variable before the first run to override the default.
 
-* Click on `Admin Central` in the left sidebar to get to the admin page
+---
 
-![Admin Central button](readme_assets/admin.png)
+## ⚙️ Configuration
 
-* Click `Start Game` to begin generating logs. The logs will be printed to your console (until you  configure your Azure secrets).
+### Environment variables
 
-![Start button](readme_assets/start.png)
+| Variable | Purpose | Default |
+|---|---|---|
+| `KC7_SECRET_KEY` | Flask session signing key | Random (sessions won't survive restarts) |
+| `KC7_SECURITY_SALT` | flask-security-too token salt | `kc7-default-salt-change-in-prod` |
+| `KC7_ADMIN_PASSWORD` | Password for the seeded admin account | `admin` |
 
-## 🤠 How to contribute
+### Azure Data Explorer (ADX)
 
-Go check out the wiki for details on how the code base is structured
+ADX credentials can be configured two ways:
+
+**Option 1 — Admin GUI (recommended):**
+Log in as admin → Admin Central → **ADX Configuration**. Enter your cluster URI, ingest URI, database name, tenant ID, client ID, and client secret. Settings are stored in the database and take effect immediately — no restart required.
+
+**Option 2 — `config.py`:**
+Edit the `BaseConfig` class directly:
+
+```python
+AAD_TENANT_ID    = "your-tenant-id"
+KUSTO_URI        = "https://yourcluster.eastus.kusto.windows.net"
+KUSTO_INGEST_URI = "https://ingest-yourcluster.eastus.kusto.windows.net"
+DATABASE         = "SecurityLogs"
+CLIENT_ID        = "your-client-id"
+CLIENT_SECRET    = "your-client-secret"
+```
+
+> GUI settings always take priority over `config.py` values.
+
+---
+
+## 🎮 Game Features
+
+### For Players
+
+#### Mitigations (Indicator Scoring)
+Players submit malicious indicators — domains, IPs, email addresses, and file hashes — discovered through KQL investigation in ADX. Each correct submission earns points with **time-weighted scoring**: submitting earlier in a session earns more (up to 2× base value in the first 24 hours).
+
+#### Challenges (Q&A)
+Players answer written questions that test their analysis and knowledge. Challenges are grouped by category and show point value and description. Answers are case-insensitive and support multiple accepted values separated by semicolons.
+
+#### Rounds (Named Game Sessions)
+Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
+
+#### Leaderboard
+The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams and Players tabs. Rankings are sorted by score with tie-breaking by earliest score time.
+
+---
+
+### For Admins
+
+#### Manage Game (`/admin/manage_game`)
+- Start, stop, and restart the game
+- Background data generation with live progress bar
+- **Session Timer** — set an end date/time after which no new points can be scored from either indicators or challenges. Enabled and disabled independently of the end time.
+
+#### Manage Users (`/admin/users`)
+- View all users with their role, team, and score
+- **Add users** directly — set username, email, password, role, and team in one form
+- **Edit users** via modal — reset password, toggle Admin/Player role, change or remove team assignment
+- Delete users
+
+#### Manage Teams (`/admin/teams`)
+- View all teams with member count, mitigations, and score
+- Create and delete teams
+
+#### Manage Challenges (`/admin/manage_challenges`)
+- Create challenges with name, category, description, answer(s), point value, and optional round assignment
+- Edit and delete challenges inline via modal
+- Import challenges in bulk via CSV upload
+- Global challenges (no round assigned) appear to all players; round-scoped challenges appear only to that round's participants
+
+#### Manage Rounds (`/admin/rounds`)
+- Create named rounds with a password join code
+- Set and toggle per-round timers independently of the global session timer
+- Delete rounds
+
+#### Malicious Indicators (`/admin/manage_indicators`)
+- Manually seed the indicator list used to score player mitigation submissions
+- Supports domains, IPs, email addresses, and file hashes — type is auto-detected on entry
+- Single add, bulk paste, or CSV import
+- Summary cards show counts by indicator type
+- Particularly useful when running against a pre-existing ADX dataset where the app hasn't generated the game data locally
+
+#### ADX Configuration (`/admin/adx_config`)
+- Configure Azure Data Explorer connection settings through the GUI
+- **Test Connection** button validates credentials live without leaving the page
+- Settings stored in the database, override `config.py` values
+
+#### ADX Permissions (`/admin/manage_database`)
+- Grant players viewer access to the ADX database so they can run KQL queries directly in the Azure Data Explorer web UI (`dataexplorer.azure.com`)
+
+#### Live Answer Feed (`/admin/live_dashboard`)
+- Real-time feed of all challenge answer submissions — both correct and incorrect
+- Auto-polls every 4 seconds
+- Filter by round and by correct/incorrect result
+- Running stats: total attempts, correct count, success rate
+- Pause/resume without losing buffered data
+
+---
+
+## 🗄️ Data Model
+
+| Table | Purpose |
+|---|---|
+| `users` | Player accounts with score and role |
+| `teams` | Teams with aggregate score |
+| `roles` / `user_roles` | Admin / Player role assignments |
+| `game_session` | Singleton tracking game state and global timer |
+| `challenges` | Q&A challenges (global or round-scoped) |
+| `solves` | First-solve records with points awarded |
+| `answer_attempts` | Every challenge submission (correct and incorrect) |
+| `game_rounds` | Named password-protected game sessions |
+| `participations` | Player ↔ round membership |
+| `malicious_indicators` | Admin-seeded indicators for scoring |
+| `adx_config` | GUI-managed ADX connection settings |
+
+---
+
+## 🔐 Security Notes
+
+- Default credentials are `admin` / `admin` — **change before exposing to any network**
+- Set `KC7_SECRET_KEY` to a fixed value in production so sessions survive app restarts
+- Set `KC7_SECURITY_SALT` to a long random string in production
+- ADX client secrets entered via the GUI are stored in the local SQLite database
+
+---
+
+## 🤠 How to Contribute
+
+See the [wiki](https://github.com/cybersheepdog/kc7/wiki) for codebase structure and contribution guidelines.
 
 ## 👯 Contributors
 
-* Simeon Kakpovi
-* Greg Schloemer
-* Alton Henley
-* Andre Murrell
-* Emily Hacker
-* Matthew Kennedy
-* Justin Carroll
-* Syeda Sani-e-Zehra
-* Stuti Kanodia
-* Helton Wernik
-* Logo by David Hardman
+Simeon Kakpovi, Greg Schloemer, Alton Henley, Andre Murrell, Emily Hacker, Matthew Kennedy, Justin Carroll, Syeda Sani-e-Zehra, Stuti Kanodia, Helton Wernik. Logo by David Hardman.
 
-## Follow us on twitter
+## Follow us
 
 https://twitter.com/KC7cyber
 
+---
 
-
-
-
-** Previously Cyber Data Maker - https://github.com/kkneomis/cyber_data_maker
+*Previously Cyber Data Maker — https://github.com/kkneomis/cyber_data_maker*

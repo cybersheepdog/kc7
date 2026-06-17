@@ -1,0 +1,64 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h1 class="h3 mb-0 text-gray-800">{{ game_round.name }} — Rankings</h1>
+      <small class="text-muted">
+        <a href="/rounds">My Rounds</a> &rsaquo;
+        <a href="/rounds/{{ game_round.id }}/challenges">{{ game_round.name }}</a> &rsaquo; Rankings
+      </small>
+    </div>
+    <a href="/rounds/{{ game_round.id }}/challenges" class="btn btn-outline-primary btn-sm">
+      <i class="fas fa-flag mr-1"></i> Challenges
+    </a>
+  </div>
+
+  <div class="card shadow mb-4">
+    <div class="card-header py-3">
+      <h6 class="m-0 font-weight-bold text-primary">Leaderboard</h6>
+    </div>
+    <div class="card-body">
+      {% if player_data %}
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover" width="100%">
+          <thead class="thead-light">
+            <tr>
+              <th style="width:4rem;">#</th>
+              <th>Player</th>
+              <th>Team</th>
+              <th class="text-right">Round Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in player_data %}
+            {% set rank = loop.index %}
+            <tr {% if p.username == current_user.username %}class="table-active"{% endif %}>
+              <td>
+                {{ rank }}
+                {% if rank == 1 %} 🥇
+                {% elif rank == 2 %} 🥈
+                {% elif rank == 3 %} 🥉
+                {% endif %}
+              </td>
+              <td>
+                {{ p.username }}
+                {% if p.username == current_user.username %}
+                  <span class="badge badge-primary ml-1">You</span>
+                {% endif %}
+              </td>
+              <td><span class="badge badge-secondary">{{ p.team }}</span></td>
+              <td class="text-right font-weight-bold">{{ p.score }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">No scores yet. Be the first to solve a challenge!</p>
+      {% endif %}
+      <small class="text-muted">Ties broken by who scored first in this round.</small>
+    </div>
+  </div>
+
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Game Rounds</h1>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for category, message in messages %}
+      <div class="alert alert-{{ 'success' if category == 'success' else ('info' if category == 'info' else 'danger') }} alert-dismissible fade show" role="alert">
+        {{ message }}<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+      </div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <div class="row">
+
+    <!-- Join a Round -->
+    <div class="col-lg-4">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-sign-in-alt mr-1"></i> Join a Round</h6>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">Enter the join code provided by your instructor to access a game round and its challenges.</p>
+          <form action="/rounds/join" method="post">
+            <div class="input-group">
+              <input type="text" class="form-control" name="password"
+                     placeholder="Enter join code..." autocomplete="off" required>
+              <div class="input-group-append">
+                <button type="submit" class="btn btn-primary">Join</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- My Rounds -->
+    <div class="col-lg-8">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-list mr-1"></i> My Rounds</h6>
+        </div>
+        <div class="card-body">
+          {% if my_rounds %}
+          <div class="list-group list-group-flush">
+            {% for r in my_rounds %}
+            <div class="list-group-item px-0">
+              <div class="d-flex align-items-center justify-content-between">
+                <div>
+                  <h6 class="mb-1 font-weight-bold">{{ r.name }}</h6>
+                  <small class="text-muted">
+                    {{ r.challenge_count }} challenge{{ 's' if r.challenge_count != 1 else '' }}
+                    &middot; {{ r.participant_count }} participant{{ 's' if r.participant_count != 1 else '' }}
+                    {% if r.uses_timer and r.end_time %}
+                      &middot;
+                      {% if r.is_expired %}
+                        <span class="text-danger">Ended {{ r.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                      {% else %}
+                        <span class="text-success">Ends {{ r.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
+                      {% endif %}
+                    {% endif %}
+                  </small>
+                </div>
+                <div>
+                  <a href="/rounds/{{ r.id }}/challenges" class="btn btn-primary btn-sm mr-1">
+                    <i class="fas fa-flag mr-1"></i> Challenges
+                  </a>
+                  <a href="/rounds/{{ r.id }}/rankings" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-trophy mr-1"></i> Rankings
+                  </a>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">You haven't joined any rounds yet. Enter a join code to get started.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+{% endblock %}

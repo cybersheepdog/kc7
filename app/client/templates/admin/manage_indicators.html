@@ -1,0 +1,236 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Malicious Indicators</h1>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for category, message in messages %}
+      <div class="alert alert-{{ 'success' if category == 'success' else ('info' if category == 'info' else 'danger') }} alert-dismissible fade show" role="alert">
+        {{ message }}<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+      </div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <!-- Summary cards -->
+  <div class="row mb-4">
+    {% for label, icon, color in [('domain','globe','primary'), ('ip','network-wired','info'), ('email','envelope','warning'), ('hash','fingerprint','danger')] %}
+    <div class="col-xl-3 col-md-6 mb-3">
+      <div class="card border-left-{{ color }} shadow h-100 py-2">
+        <div class="card-body py-2">
+          <div class="row no-gutters align-items-center">
+            <div class="col mr-2">
+              <div class="text-xs font-weight-bold text-{{ color }} text-uppercase mb-1">{{ label }}s</div>
+              <div class="h5 mb-0 font-weight-bold text-gray-800">{{ counts[label] }}</div>
+            </div>
+            <div class="col-auto"><i class="fas fa-{{ icon }} fa-2x text-gray-300"></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Indicator table -->
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+      <h6 class="m-0 font-weight-bold text-primary">Seeded Indicators</h6>
+      <div>
+        <span class="badge badge-primary badge-pill mr-2">{{ indicators|length }} total</span>
+        {% if indicators %}
+        <form action="/admin/clear_indicators" method="post" class="d-inline">
+          <button type="submit" class="btn btn-sm btn-outline-danger"
+                  onclick="return confirm('Remove ALL {{ indicators|length }} indicator(s)? This cannot be undone.')">
+            <i class="fas fa-trash mr-1"></i> Clear All
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card-body">
+      {% if indicators %}
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover table-sm" id="indicators-table" width="100%">
+          <thead class="thead-light">
+            <tr>
+              <th style="width:6rem;">Type</th>
+              <th>Indicator</th>
+              <th style="width:11rem;">Added</th>
+              <th style="width:5rem;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ind in indicators %}
+            <tr>
+              <td>
+                {% set badge = {'domain': 'primary', 'ip': 'info', 'email': 'warning', 'hash': 'danger'} %}
+                <span class="badge badge-{{ badge.get(ind.itype, 'secondary') }}">{{ ind.itype }}</span>
+              </td>
+              <td><code>{{ ind.value }}</code></td>
+              <td class="small text-muted">{{ ind.added_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td>
+                <form action="/admin/delete_indicator" method="post">
+                  <input type="hidden" name="indicator_id" value="{{ ind.id }}">
+                  <button type="submit" class="btn btn-danger btn-sm"
+                          onclick="return confirm('Remove this indicator?')">
+                    <i class="fas fa-times"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">No indicators seeded yet. Use the forms below to add some.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="row">
+
+    <!-- Single add + bulk paste -->
+    <div class="col-lg-6">
+
+      <!-- Single indicator -->
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Add Single Indicator</h6>
+        </div>
+        <div class="card-body">
+          <form action="/admin/add_indicator" method="post">
+            <div class="form-row">
+              <div class="form-group col-md-8">
+                <label>Value <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="value" id="single-value"
+                       placeholder="e.g. evil.com / 1.2.3.4 / user@evil.com / abc123..."
+                       autocomplete="off" autocorrect="off" spellcheck="false" required>
+                <small class="form-text text-muted" id="single-detect-hint"></small>
+              </div>
+              <div class="form-group col-md-4">
+                <label>Type</label>
+                <select class="form-control" name="itype" id="single-itype">
+                  <option value="auto">Auto-detect</option>
+                  <option value="domain">Domain</option>
+                  <option value="ip">IP Address</option>
+                  <option value="email">Email</option>
+                  <option value="hash">Hash</option>
+                </select>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fas fa-plus mr-1"></i> Add Indicator
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Bulk paste -->
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Bulk Add (Paste List)</h6>
+        </div>
+        <div class="card-body">
+          <form action="/admin/bulk_add_indicators" method="post">
+            <div class="form-group">
+              <label>One indicator per line. Type is auto-detected.</label>
+              <textarea class="form-control font-monospace small" name="indicators" rows="8"
+                        placeholder="evil.com&#10;10.0.0.1&#10;attacker@phish.io&#10;abc123def456...&#10;&#10;Optionally specify type: evil.com,domain"></textarea>
+              <small class="form-text text-muted">Duplicates are automatically skipped. Optionally append <code>,type</code> to override auto-detection.</small>
+            </div>
+            <button type="submit" class="btn btn-success btn-block">
+              <i class="fas fa-list mr-1"></i> Add All
+            </button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- CSV import -->
+    <div class="col-lg-6">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Import from CSV</h6>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">
+            Upload a CSV with one or two columns:<br>
+            <code>value</code> &nbsp;&mdash;&nbsp; type auto-detected<br>
+            <code>value, type</code> &nbsp;&mdash;&nbsp; explicit type (<code>domain</code>, <code>ip</code>, <code>email</code>, <code>hash</code>)
+          </p>
+          <form action="/admin/import_indicators_csv" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+              <div class="custom-file">
+                <input type="file" class="custom-file-input" id="csv_file" name="csv_file" accept=".csv,.txt">
+                <label class="custom-file-label" for="csv_file">Choose file...</label>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success btn-block">
+              <i class="fas fa-upload mr-1"></i> Import
+            </button>
+          </form>
+          <hr>
+          <p class="small text-muted mb-1"><strong>Example CSV:</strong></p>
+          <pre class="small bg-light p-2 rounded">value,type
+evil-corp.com,domain
+185.220.101.1,ip
+hr@evil-corp.com,email
+4d5e6f7a8b9c...,hash</pre>
+          <p class="text-muted small mb-0">
+            Header row is optional and auto-skipped.
+            Duplicates are silently skipped.
+          </p>
+        </div>
+      </div>
+
+      <!-- Type detection reference -->
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Auto-detection Rules</h6>
+        </div>
+        <div class="card-body small">
+          <table class="table table-sm table-borderless mb-0">
+            <tr><td><span class="badge badge-info">IP</span></td><td>Matches <code>x.x.x.x</code> IPv4 pattern</td></tr>
+            <tr><td><span class="badge badge-warning">Email</span></td><td>Contains <code>@</code> with a domain after it</td></tr>
+            <tr><td><span class="badge badge-danger">Hash</span></td><td>All hex characters, length 32 / 40 / 56 / 64 (MD5 / SHA1 / SHA224 / SHA256)</td></tr>
+            <tr><td><span class="badge badge-primary">Domain</span></td><td>Everything else</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Live auto-detect hint on single-add input
+    function detectType(value) {
+      value = value.trim();
+      if (/^\d{1,3}(\.\d{1,3}){3}$/.test(value)) return 'ip';
+      if (/@/.test(value) && /\.[^@]+$/.test(value.split('@')[1] || '')) return 'email';
+      if (/^[0-9a-fA-F]{32}$/.test(value) || /^[0-9a-fA-F]{40}$/.test(value) ||
+          /^[0-9a-fA-F]{56}$/.test(value) || /^[0-9a-fA-F]{64}$/.test(value)) return 'hash';
+      if (value.length > 0) return 'domain';
+      return null;
+    }
+
+    $('#single-value').on('input', function() {
+      var t = detectType($(this).val());
+      var hint = $('#single-detect-hint');
+      var sel  = $('#single-itype');
+      if (t && sel.val() === 'auto') {
+        hint.text('Auto-detected: ' + t);
+      } else {
+        hint.text('');
+      }
+    });
+
+    // CSV file label
+    document.getElementById('csv_file').addEventListener('change', function() {
+      this.nextElementSibling.textContent = this.files[0] ? this.files[0].name : 'Choose file...';
+    });
+  </script>
+
+{% endblock %}

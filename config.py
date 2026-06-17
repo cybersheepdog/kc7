@@ -24,13 +24,23 @@ class BaseConfig(object):
 
     SQLALCHEMY_DATABASE_URI = 'sqlite:///flaskr.db'
     
-    # Secret key for signing cookie. You should replace this
-    SECRET_KEY = 'y?,???\???Z#?N'
+    # Secret key for signing cookies and sessions.
+    # Set the KC7_SECRET_KEY environment variable in production.
+    # Falls back to a random key in dev (sessions won't survive restarts without a fixed value).
+    SECRET_KEY = os.environ.get('KC7_SECRET_KEY') or os.urandom(32)
+
+    # Required by flask-security-too for token/email operations.
+    # Set KC7_SECURITY_SALT in production to a long random string.
+    SECURITY_PASSWORD_SALT = os.environ.get('KC7_SECURITY_SALT', 'kc7-default-salt-change-in-prod')
 
     ################################
     # AZURE ENVIRONMENT VARIABLES
     # FOLLOW THE README TO REPLACE THESE VALUES
     ################################
+
+    # Override the seeded admin password via environment variable (default: 'admin').
+    # Set KC7_ADMIN_PASSWORD before first run to avoid using the default credentials.
+    ADMIN_PASSWORD = os.environ.get('KC7_ADMIN_PASSWORD', 'admin')
 
     AAD_TENANT_ID = "{YOUR TENANT ID}" #https://docs.microsoft.com/en-us/azure/active-directory/fundamentals/active-directory-how-to-find-tenant
     KUSTO_URI = "https://{clustername}.eastus.kusto.windows.net"

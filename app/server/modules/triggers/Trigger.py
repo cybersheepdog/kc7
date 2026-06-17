@@ -1,5 +1,4 @@
 # Import external modules
-from asyncore import write
 from re import S
 from faker import Faker
 from faker.providers import user_agent

@@ -1,0 +1,140 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+  <!-- Page Heading -->
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Challenges</h1>
+  </div>
+
+  {% if not categories %}
+  <div class="card shadow mb-4">
+    <div class="card-body text-center text-muted py-5">
+      <i class="fas fa-flag fa-3x mb-3"></i>
+      <p class="mb-0">No challenges have been posted yet. Check back later!</p>
+    </div>
+  </div>
+  {% endif %}
+
+  {% for cat in categories %}
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex align-items-center">
+      <h6 class="m-0 font-weight-bold text-primary mr-2">{{ cat }}</h6>
+      <span class="badge badge-secondary">
+        {{ by_category[cat]|selectattr('id', 'in', solved_ids)|list|length }} /
+        {{ by_category[cat]|length }} solved
+      </span>
+    </div>
+    <div class="card-body p-0">
+      <div class="accordion" id="accordion-{{ loop.index }}">
+        {% for ch in by_category[cat] %}
+        {% set solved = ch.id in solved_ids %}
+        <div class="card mb-0 border-0 border-bottom">
+          <div class="card-header bg-white" id="heading-{{ ch.id }}">
+            <div class="d-flex align-items-center justify-content-between py-1">
+              <button class="btn btn-link text-left collapsed p-0 flex-grow-1"
+                      data-toggle="collapse"
+                      data-target="#collapse-{{ ch.id }}"
+                      aria-expanded="false"
+                      aria-controls="collapse-{{ ch.id }}">
+                {% if solved %}
+                  <i class="fas fa-check-circle text-success mr-2"></i>
+                {% else %}
+                  <i class="far fa-circle text-muted mr-2"></i>
+                {% endif %}
+                {{ ch.name }}
+              </button>
+              <span class="badge badge-{{ 'success' if solved else 'primary' }} ml-3">
+                {{ ch.value }} pts
+              </span>
+            </div>
+          </div>
+          <div id="collapse-{{ ch.id }}" class="collapse"
+               aria-labelledby="heading-{{ ch.id }}"
+               data-parent="#accordion-{{ loop.index }}">
+            <div class="card-body bg-light">
+              <p class="mb-3">{{ ch.description }}</p>
+              {% if solved %}
+              <div class="alert alert-success mb-0 py-2">
+                <i class="fas fa-check mr-1"></i> You already solved this challenge!
+              </div>
+              {% else %}
+              <form class="challenge-form" data-challenge-id="{{ ch.id }}">
+                <div class="input-group">
+                  <input type="text" class="form-control answer-input"
+                         placeholder="Your answer..."
+                         autocomplete="off" autocorrect="off" spellcheck="false">
+                  <div class="input-group-append">
+                    <button type="submit" class="btn btn-primary">
+                      <i class="fas fa-paper-plane mr-1"></i> Submit
+                    </button>
+                  </div>
+                </div>
+                <div class="feedback mt-2"></div>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <script>
+    $(document).on('submit', '.challenge-form', function(e) {
+      e.preventDefault();
+      var form       = $(this);
+      var challengeId = form.data('challenge-id');
+      var answerInput = form.find('.answer-input');
+      var feedback    = form.find('.feedback');
+      var btn         = form.find('button[type="submit"]');
+      var answer      = answerInput.val().trim();
+
+      if (!answer) return;
+
+      btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Checking...');
+      feedback.html('');
+
+      $.post('/submit_answer', { challenge_id: challengeId, answer: answer }, function(data) {
+        btn.prop('disabled', false).html('<i class="fas fa-paper-plane mr-1"></i> Submit');
+
+        if (data.correct) {
+          if (data.already_solved) {
+            feedback.html('<div class="alert alert-info py-2 mb-0">Already solved!</div>');
+          } else {
+            toastr['success']('+' + data.points_earned + ' points!', 'Correct!');
+            // Replace form with a solved banner
+            var banner = $('<div class="alert alert-success mb-0 py-2">'
+              + '<i class="fas fa-check mr-1"></i> Correct! <strong>+' + data.points_earned + ' pts</strong>'
+              + ' &mdash; Your score: ' + Number(data.user_score).toLocaleString() + ' pts'
+              + '</div>');
+            form.replaceWith(banner);
+
+            // Mark the accordion header as solved
+            var heading = $('#heading-' + challengeId);
+            heading.find('.fa-circle').removeClass('far fa-circle text-muted').addClass('fas fa-check-circle text-success');
+            var badge = heading.find('.badge');
+            badge.removeClass('badge-primary').addClass('badge-success');
+
+            // Increment solved counter in category header
+            var categoryCard = heading.closest('.card.shadow');
+            var counter = categoryCard.find('.badge-secondary');
+            var parts = counter.text().trim().split('/');
+            if (parts.length === 2) {
+              counter.text((parseInt(parts[0].trim()) + 1) + ' / ' + parts[1].trim());
+            }
+          }
+        } else {
+          toastr['error']('Incorrect answer. Try again!');
+          feedback.html('<div class="alert alert-danger py-2 mb-0"><i class="fas fa-times mr-1"></i> Incorrect. Try again!</div>');
+          answerInput.focus().select();
+        }
+      }).fail(function() {
+        btn.prop('disabled', false).html('<i class="fas fa-paper-plane mr-1"></i> Submit');
+        toastr['error']('Network error. Please try again.');
+      });
+    });
+  </script>
+
+{% endblock %}

@@ -1,0 +1,230 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-satellite-dish mr-2 text-primary"></i>Live Answer Feed
+  </h1>
+  <div class="d-flex align-items-center">
+    <span id="liveIndicator" class="badge badge-success mr-3" style="font-size:0.85rem;">
+      <i class="fas fa-circle mr-1" style="font-size:0.5rem;"></i> LIVE
+    </span>
+    <button class="btn btn-sm btn-outline-secondary" id="pauseBtn">
+      <i class="fas fa-pause mr-1"></i> Pause
+    </button>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow mb-3">
+  <div class="card-body py-2">
+    <div class="form-inline">
+      <label class="mr-2 font-weight-bold small">Filter by Round:</label>
+      <select class="form-control form-control-sm mr-4" id="roundFilter">
+        <option value="-1">All rounds</option>
+        <option value="0">Global challenges only</option>
+        {% for r in rounds %}
+        <option value="{{ r.id }}">{{ r.name }}</option>
+        {% endfor %}
+      </select>
+      <label class="mr-2 font-weight-bold small">Show:</label>
+      <select class="form-control form-control-sm" id="correctFilter">
+        <option value="all">All attempts</option>
+        <option value="correct">Correct only</option>
+        <option value="incorrect">Incorrect only</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- Stats row -->
+<div class="row mb-3">
+  <div class="col-sm-4">
+    <div class="card border-left-primary shadow h-100 py-2">
+      <div class="card-body py-2">
+        <div class="row no-gutters align-items-center">
+          <div class="col mr-2">
+            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Attempts</div>
+            <div class="h5 mb-0 font-weight-bold text-gray-800" id="statTotal">—</div>
+          </div>
+          <div class="col-auto"><i class="fas fa-paper-plane fa-2x text-gray-300"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-left-success shadow h-100 py-2">
+      <div class="card-body py-2">
+        <div class="row no-gutters align-items-center">
+          <div class="col mr-2">
+            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Correct</div>
+            <div class="h5 mb-0 font-weight-bold text-gray-800" id="statCorrect">—</div>
+          </div>
+          <div class="col-auto"><i class="fas fa-check-circle fa-2x text-gray-300"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card border-left-info shadow h-100 py-2">
+      <div class="card-body py-2">
+        <div class="row no-gutters align-items-center">
+          <div class="col mr-2">
+            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Success Rate</div>
+            <div class="h5 mb-0 font-weight-bold text-gray-800" id="statPct">—</div>
+          </div>
+          <div class="col-auto"><i class="fas fa-percentage fa-2x text-gray-300"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Live feed table -->
+<div class="card shadow mb-4">
+  <div class="card-header py-3 d-flex align-items-center justify-content-between">
+    <h6 class="m-0 font-weight-bold text-primary">Recent Submissions</h6>
+    <small class="text-muted" id="lastUpdated">—</small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:600px; overflow-y:auto;">
+      <table class="table table-sm table-hover mb-0" id="feedTable">
+        <thead class="thead-light" style="position:sticky;top:0;z-index:1;">
+          <tr>
+            <th style="width:140px">Time</th>
+            <th>Player</th>
+            <th>Team</th>
+            <th>Challenge</th>
+            <th>Category</th>
+            <th>Answer Submitted</th>
+            <th style="width:90px">Result</th>
+          </tr>
+        </thead>
+        <tbody id="feedBody">
+          <tr id="emptyRow">
+            <td colspan="7" class="text-center text-muted py-4">
+              <i class="fas fa-satellite-dish mr-1"></i> Waiting for submissions…
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+var maxId      = 0;
+var paused     = false;
+var pollTimer  = null;
+var POLL_MS    = 4000;
+var allRows    = [];   // full buffer (newest first)
+
+function applyFilters() {
+  var roundFilter   = $('#roundFilter').val();
+  var correctFilter = $('#correctFilter').val();
+  var visible = allRows.filter(function(r) {
+    if (correctFilter === 'correct'   && !r.correct)  return false;
+    if (correctFilter === 'incorrect' &&  r.correct)  return false;
+    if (roundFilter !== '-1') {
+      var rid = parseInt(roundFilter);
+      var rowRid = r.round_id === null ? 0 : r.round_id;
+      if (rowRid !== rid) return false;
+    }
+    return true;
+  });
+  renderTable(visible);
+}
+
+function renderTable(rows) {
+  var tbody = $('#feedBody');
+  if (rows.length === 0) {
+    tbody.html('<tr id="emptyRow"><td colspan="7" class="text-center text-muted py-4">'
+      + '<i class="fas fa-satellite-dish mr-1"></i> No submissions match the current filter.</td></tr>');
+    return;
+  }
+  var html = '';
+  rows.forEach(function(r) {
+    var badge = r.correct
+      ? '<span class="badge badge-success"><i class="fas fa-check mr-1"></i>Correct</span>'
+      : '<span class="badge badge-danger"><i class="fas fa-times mr-1"></i>Wrong</span>';
+    var rowClass = r.correct ? '' : 'table-danger';
+    html += '<tr class="' + rowClass + '">'
+      + '<td class="text-muted small">' + r.attempted_at + '</td>'
+      + '<td><strong>' + escHtml(r.username) + '</strong></td>'
+      + '<td>' + escHtml(r.team) + '</td>'
+      + '<td>' + escHtml(r.challenge) + '</td>'
+      + '<td><span class="badge badge-light">' + escHtml(r.category) + '</span></td>'
+      + '<td><code>' + escHtml(r.submitted) + '</code></td>'
+      + '<td>' + badge + '</td>'
+      + '</tr>';
+  });
+  tbody.html(html);
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function poll() {
+  if (paused) return;
+  var roundId = $('#roundFilter').val();
+  $.getJSON('/admin/live_feed', {since: maxId, round_id: roundId, limit: 100}, function(data) {
+    if (data.rows && data.rows.length > 0) {
+      // merge new rows (newest-first from server) into our buffer
+      allRows = data.rows.concat(allRows).slice(0, 500);
+      maxId = data.max_id;
+    } else if (maxId === 0 && data.max_id) {
+      // first poll, no rows since 0 but we got max_id — do a full load
+      maxId = 0;
+    }
+    // Update stats
+    if (data.stats) {
+      $('#statTotal').text(data.stats.total.toLocaleString());
+      $('#statCorrect').text(data.stats.correct.toLocaleString());
+      $('#statPct').text(data.stats.pct + '%');
+    }
+    if (data.max_id) maxId = Math.max(maxId, data.max_id);
+    applyFilters();
+    $('#lastUpdated').text('Updated ' + new Date().toLocaleTimeString());
+  });
+}
+
+// Initial full load (since=0)
+function fullReload() {
+  maxId = 0;
+  allRows = [];
+  poll();
+}
+
+// Pause / resume
+$('#pauseBtn').on('click', function() {
+  paused = !paused;
+  if (paused) {
+    $(this).html('<i class="fas fa-play mr-1"></i> Resume');
+    $(this).removeClass('btn-outline-secondary').addClass('btn-outline-success');
+    $('#liveIndicator').removeClass('badge-success').addClass('badge-warning').html(
+      '<i class="fas fa-circle mr-1" style="font-size:0.5rem;"></i> PAUSED');
+  } else {
+    $(this).html('<i class="fas fa-pause mr-1"></i> Pause');
+    $(this).removeClass('btn-outline-success').addClass('btn-outline-secondary');
+    $('#liveIndicator').removeClass('badge-warning').addClass('badge-success').html(
+      '<i class="fas fa-circle mr-1" style="font-size:0.5rem;"></i> LIVE');
+    poll();
+  }
+});
+
+// Re-filter without re-fetching when UI filters change
+$('#correctFilter').on('change', function() { applyFilters(); });
+
+// Round filter change requires a full reload (server-side join filter)
+$('#roundFilter').on('change', function() { fullReload(); });
+
+$(document).ready(function() {
+  fullReload();
+  pollTimer = setInterval(poll, POLL_MS);
+});
+</script>
+
+{% endblock %}

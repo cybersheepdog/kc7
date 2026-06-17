@@ -1,0 +1,170 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Manage Rounds</h1>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for category, message in messages %}
+      <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+        {{ message }}<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+      </div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <!-- Round List -->
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+      <h6 class="m-0 font-weight-bold text-primary">Game Rounds</h6>
+      <span class="badge badge-primary badge-pill">{{ rounds|length }} total</span>
+    </div>
+    <div class="card-body">
+      {% if rounds %}
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover table-sm">
+          <thead class="thead-light">
+            <tr>
+              <th>Name</th>
+              <th>Join Code</th>
+              <th>Challenges</th>
+              <th>Participants</th>
+              <th>Timer</th>
+              <th>End Time</th>
+              <th style="width:16rem;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rounds %}
+            <tr>
+              <td><strong>{{ r.name }}</strong></td>
+              <td><code>{{ r.password }}</code></td>
+              <td class="text-center">{{ r.challenge_count }}</td>
+              <td class="text-center">{{ r.participant_count }}</td>
+              <td>
+                {% if r.uses_timer %}
+                  <span class="badge badge-success">On</span>
+                {% else %}
+                  <span class="badge badge-secondary">Off</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                {% if r.end_time %}
+                  {{ r.end_time.strftime('%Y-%m-%d %H:%M') }}
+                  {% if r.is_expired %}<span class="text-danger ml-1">(Expired)</span>{% endif %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex flex-wrap" style="gap:4px;">
+                  <!-- View challenges -->
+                  <a href="/rounds/{{ r.id }}/challenges" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-flag"></i> Challenges
+                  </a>
+                  <!-- Set timer -->
+                  <button class="btn btn-sm btn-warning"
+                          data-toggle="modal" data-target="#timerModal"
+                          data-round-id="{{ r.id }}"
+                          data-round-name="{{ r.name }}"
+                          data-end-time="{{ r.end_time.strftime('%Y-%m-%dT%H:%M') if r.end_time else '' }}">
+                    <i class="fas fa-clock"></i> Timer
+                  </button>
+                  <!-- Toggle timer -->
+                  <form action="/admin/rounds/{{ r.id }}/toggle_timer" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-{{ 'success' if not r.uses_timer else 'secondary' }}"
+                            {% if not r.end_time %}disabled title="Set an end time first"{% endif %}>
+                      {% if r.uses_timer %}<i class="fas fa-pause"></i> Disable{% else %}<i class="fas fa-play"></i> Enable{% endif %}
+                    </button>
+                  </form>
+                  <!-- Delete -->
+                  <form action="/admin/rounds/delete" method="post" class="d-inline">
+                    <input type="hidden" name="round_id" value="{{ r.id }}">
+                    <button type="submit" class="btn btn-sm btn-danger"
+                            onclick="return confirm('Delete this round? Its challenges will become global.')">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">No rounds yet. Create one below.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Create Round -->
+  <div class="card shadow mb-4">
+    <div class="card-header py-3">
+      <h6 class="m-0 font-weight-bold text-primary">Create New Round</h6>
+    </div>
+    <div class="card-body">
+      <form action="/admin/rounds/create" method="post">
+        <div class="form-row">
+          <div class="form-group col-md-5">
+            <label>Round Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="name" required
+                   placeholder="e.g. Week 1 — Network Investigation">
+          </div>
+          <div class="form-group col-md-4">
+            <label>Join Code <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="password" required
+                   placeholder="e.g. kc7-alpha-2026" autocomplete="off">
+            <small class="form-text text-muted">Players enter this code to join. Must be unique.</small>
+          </div>
+          <div class="form-group col-md-3 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fas fa-plus mr-1"></i> Create Round
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Timer Modal -->
+  <div class="modal fade" id="timerModal" tabindex="-1" role="dialog" aria-labelledby="timerModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <form id="timerForm" action="" method="post">
+          <div class="modal-header">
+            <h5 class="modal-title" id="timerModalLabel">Set Timer</h5>
+            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small" id="timer-round-name"></p>
+            <div class="form-group">
+              <label>End Date &amp; Time <span class="text-danger">*</span></label>
+              <input type="datetime-local" class="form-control" name="end_time" id="modal-end-time">
+            </div>
+            <p class="text-muted small mb-0">Saving will set this end time and enable the timer.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-save mr-1"></i> Set &amp; Enable
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    $('#timerModal').on('show.bs.modal', function(event) {
+      var btn = $(event.relatedTarget);
+      var roundId   = btn.data('round-id');
+      var roundName = btn.data('round-name');
+      var endTime   = btn.data('end-time');
+      $('#timer-round-name').text('Round: ' + roundName);
+      $('#modal-end-time').val(endTime || '');
+      $('#timerForm').attr('action', '/admin/rounds/' + roundId + '/set_timer');
+    });
+  </script>
+
+{% endblock %}

@@ -5,9 +5,7 @@ import ipaddress
 from json import JSONEncoder
 from faker import Faker
 from faker.providers import internet, user_agent, person
-from user_agent import generate_user_agent, generate_navigator
 from sqlalchemy import func
-import names
 from datetime import date, timedelta, datetime
 
 from app.server.models import Base
@@ -78,7 +76,7 @@ class Company(Base):
         """
         # time is returned as timestamp (float)
         # Get the current game session from the database
-        current_session = db.session.query(GameSession).get(1)
+        current_session = db.session.get(GameSession, 1)
         company_start_date = date.fromisoformat(self.activity_start_date)
         account_creation_date = company_start_date + timedelta(days=-days_since_hire)
         account_creation_timestamp = datetime.combine(date=account_creation_date, time=Clock.get_random_time()).timestamp()
@@ -88,7 +86,6 @@ class Company(Base):
         employee = Employee(
             timestamp=account_creation_timestamp,
             name= name or  self.get_employee_name(),
-            # user_agent=generate_user_agent(os=('win')),
             ip_addr=self.get_internal_ip(),
             company=self,
             role=title
@@ -113,10 +110,10 @@ class Company(Base):
         Return a name that doesn't have conflicting username as another user
         """
         # get a random name
-        name = names.get_full_name()
+        name = fake.name()
         # if the name has already been used, try again
         while name in self.employee_names:
-            name = names.get_full_name()
+            name = fake.name()
 
         # now get a unique email addr
         # update the cached list of employee names
@@ -220,7 +217,7 @@ class Employee(Base):
                 timestamp:float, role:str="",  user_agent: str=None,) -> None:
         self.name = name
         
-        self.user_agent = generate_user_agent(os=('win'))
+        self.user_agent = fake.user_agent()
         self.ip_addr = ip_addr
         self.home_ip_addr = fake.ipv4_public()
         self.home_ua = fake.user_agent()

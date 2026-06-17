@@ -64,7 +64,7 @@
     "hideMethod": "fadeOut"
   }
   {% for category, message in get_flashed_messages(with_categories=true) %}
-      {% if category in ["success", "error"] %}
+      {% if category in ["success", "error", "warning"] %}
           toastr['{{ category }}']('{{ message }}');
       {% else %}
           toastr['info']('{{ message }}');

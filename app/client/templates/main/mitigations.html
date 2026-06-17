@@ -1,83 +1,133 @@
 {% extends "main/base.html" %}
 {% block body %}
 
-  
   <!-- Page Heading -->
-   <div class="d-sm-flex align-items-center justify-content-between mb-4">
-    <h1 class="h3 mb-0 text-gray-800">Dashboard</h1>
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Mitigations</h1>
   </div>
 
-
- <!-- Begin Page Content -->
   <div class="container-fluid">
     <div class="row">
-         <!-- Pie Chart -->
-    <div class="col-xl-4 col-lg-5">
-      <div class="card shadow mb-4">
-        <!-- Card Header - Dropdown -->
-        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-          <h6 class="m-0 font-weight-bold text-primary">Indicators to block</h6>
-          <div class="dropdown no-arrow">
-            <a class="dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-              <i class="fas fa-ellipsis-v fa-sm fa-fw text-gray-400"></i>
-            </a>
-            <div class="dropdown-menu dropdown-menu-right shadow animated--fade-in" aria-labelledby="dropdownMenuLink">
-              <div class="dropdown-header">Dropdown Header:</div>
-              <a class="dropdown-item" href="#">Action</a>
-              <a class="dropdown-item" href="#">Another action</a>
-              <div class="dropdown-divider"></div>
-              <a class="dropdown-item" href="#">Something else here</a>
-            </div>
+
+      <!-- Deny List Card -->
+      <div class="col-xl-6 col-lg-7">
+        <div class="card shadow mb-4">
+          <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Indicators to Block</h6>
+          </div>
+          <div class="card-body">
+            <p class="text-muted small mb-3">
+              Enter one indicator per line (domains, IPs, file hashes, email addresses).
+              Each correctly identified malicious indicator earns you and your team points.
+              <strong>Find indicators early for a speed bonus &mdash; up to 2&times; base points!</strong>
+            </p>
+            <form action="#">
+              <div class="form-group">
+                <textarea class="form-control" id="denylist" rows="12"
+                          placeholder="e.g.&#10;malicious-domain.com&#10;192.168.1.100&#10;abc123...hash"></textarea>
+              </div>
+              <button type="submit" id="denylistupdate" class="btn btn-primary btn-block mb-2">
+                <i class="fas fa-shield-alt mr-1"></i> Submit Indicators
+              </button>
+            </form>
           </div>
         </div>
-        <!-- Card Body -->
-        <div class="card-body">
-          <form action="#">
-            <div class="form-group">
-                <textarea class="form-control" id="denylist" rows="10"></textarea>
-            </div>
-            <button type="submit" id="denylistupdate" class="btn btn-primary btn-block mb-2">Update DenyList</button>
-          </form>
+      </div>
+
+      <!-- Score Feedback Card -->
+      <div class="col-xl-6 col-lg-5">
+        <div class="card shadow mb-4">
+          <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Submission Result</h6>
+          </div>
+          <div class="card-body" id="score-feedback">
+            <p class="text-muted">Submit your indicator list to see results here.</p>
+          </div>
         </div>
       </div>
-    </div>
+
     </div>
   </div>
 
   <script>
-    
 
-
-    $.get("/getDenyList",
-      function(data){
-        $("#denylist").val(JSON.parse(data).join("\n"));
+    // Load the team's existing deny list on page load
+    $.get("/getDenyList", function(data) {
+      try {
+        var items = JSON.parse(data);
+        if (Array.isArray(items) && items.length > 0) {
+          $("#denylist").val(items.join("\n"));
+        }
+      } catch(e) {
+        console.log("Could not parse deny list:", e);
       }
-    );
-   
-    $( "#denylistupdate" ).click(function(event) {
-            event.preventDefault();
-            
-            console.log("updating denylist...");
-            
-            try {
-                denyList = $("#denylist").val();
-                console.log(denyList);
-                //console.log(student_id)
-                $.post( "/updateDenyList",
-                       {dlist: denyList},
-                       function(data){
-                            toastr['success']('Denylist Updated');
-                            //console.log(data)
-                       });
-                
-            } catch(err) {
-              toastr['success']('Error Updating Denylist. Contact your administrator');
-                console.log("Request to update DenyList failed")
-                console.log(err)
-            }
+    });
 
-        });
-      
-    </script>
+    // Submit handler
+    $("#denylistupdate").click(function(event) {
+      event.preventDefault();
 
-  {% endblock %}
+      var btn = $(this);
+      btn.prop("disabled", true).text("Submitting...");
+
+      var denyList = $("#denylist").val();
+
+      $.post("/updateDenyList", { dlist: denyList }, function(data) {
+        btn.prop("disabled", false).html('<i class="fas fa-shield-alt mr-1"></i> Submit Indicators');
+
+        if (!data.success) {
+          toastr['error']('Failed to update deny list. Try again.');
+          $("#score-feedback").html('<p class="text-danger">Submission failed. Please try again.</p>');
+          return;
+        }
+
+        // Build feedback panel
+        var pointsEarned = data.points_earned || 0;
+        var totalScore   = data.total_score  || 0;
+        var userScore    = data.user_score   || 0;
+        var correct      = data.correct_indicators || [];
+
+        var html = '';
+
+        if (pointsEarned > 0) {
+          toastr['success']('+' + pointsEarned + ' points earned!');
+          html += '<div class="alert alert-success">'
+               +  '<h5 class="alert-heading">+' + pointsEarned + ' points!</h5>'
+               +  '<p>You correctly identified <strong>' + correct.length + '</strong> '
+               +  'new malicious indicator' + (correct.length === 1 ? '' : 's') + '.</p>'
+               +  '<hr>'
+               +  '<p class="mb-1">Your score: <strong>' + userScore + ' pts</strong></p>'
+               +  '<p class="mb-0">Team total: <strong>' + totalScore + ' pts</strong></p>'
+               +  '</div>';
+
+          if (correct.length > 0) {
+            html += '<p class="font-weight-bold text-success mt-3">Correct indicators found:</p><ul class="small">';
+            correct.forEach(function(ind) {
+              html += '<li><code>' + $('<div>').text(ind).html() + '</code></li>';
+            });
+            html += '</ul>';
+          }
+        } else {
+          toastr['info']('Deny list saved -- no new malicious indicators found.');
+          html += '<div class="alert alert-info">'
+               +  '<h5 class="alert-heading">No new matches</h5>'
+               +  '<p>None of the newly added indicators matched known malicious activity.</p>'
+               +  '<hr>'
+               +  '<p class="mb-1">Your score: <strong>' + userScore + ' pts</strong></p>'
+               +  '<p class="mb-0">Team total: <strong>' + totalScore + ' pts</strong></p>'
+               +  '</div>'
+               +  '<p class="text-muted small">Keep investigating! Try submitting domains, IPs, '
+               +  'file hashes, or email addresses linked to threat actor activity.</p>';
+        }
+
+        $("#score-feedback").html(html);
+
+      }).fail(function() {
+        btn.prop("disabled", false).html('<i class="fas fa-shield-alt mr-1"></i> Submit Indicators');
+        toastr['error']('Network error. Please try again.');
+      });
+    });
+
+  </script>
+
+{% endblock %}

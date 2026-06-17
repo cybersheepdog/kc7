@@ -1,9 +1,10 @@
 
 # Import flask dependencies
 from flask import Blueprint, request, render_template, \
-                  flash, g, session, redirect, url_for
-from flask_login import login_user, logout_user , current_user , \
-     login_required
+                  flash, g, session, redirect, url_for, current_app
+from flask_login import logout_user, current_user, login_required
+from flask_security import login_user
+from itsdangerous import URLSafeTimedSerializer
 
 from app.server.models import *
 from app.server.auth.forms import EmailForm, PasswordForm
@@ -12,6 +13,21 @@ from app.server.utils import *
 
 # Define the blueprint: 'auth', set its url prefix: app.url/auth
 auth = Blueprint('auth', __name__)
+
+
+def _get_ts():
+    """Return a URLSafeTimedSerializer using the app's secret key."""
+    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+
+
+def send_email(subject, recipient, html):
+    """
+    Stub email sender.  Wire up Flask-Mail + a real mail config to enable.
+    For now we log the attempt and flash a friendly message.
+    """
+    print(f"[send_email] Would send '{subject}' to {recipient}")
+    flash("Email sending is not configured on this server. "
+          "Ask your admin to reset your password manually.", "warning")
 
 
 @auth.route('/login', methods=['GET', 'POST'])
@@ -25,7 +41,6 @@ def login():
     if 'remember_me' in request.form:
         remember_me = True
     registered_user = Users.query.filter_by(username=username).first()
-    # if the username or password is invalid
     if (registered_user is not None) and (registered_user.check_password(password)):
         login_user(registered_user, remember=remember_me)
         flash('Logged in successfully', 'success')
@@ -33,7 +48,6 @@ def login():
     else:
         flash('Username or Password is invalid', 'error')
     return redirect(url_for('auth.login'))
-
 
 
 @auth.route('/logout')
@@ -64,20 +78,14 @@ def register():
     else:
         try:
             print("team id is %s" % team_id)
-            team = Team.query.get(team_id)
-            user = Users(username,
-                        password,
-                        email,
-                        team=team)
+            team = db.session.get(Team, int(team_id))
+            user = Users(username, password, email, team=team)
             db.session.add(user)
             db.session.commit()
             flash('User successfully registered', "success")
-            #html = render_template('email/basic.html',
-            #                       username=username)
-            #send_email("Welcome to the attendance app!", email, html)
         except Exception as e:
             print("failed to create user: %s" % e)
-            flash("Oops, something went wrong in creating your account" , "error")
+            flash("Oops, something went wrong in creating your account", "error")
 
     return redirect(url_for('auth.login'))
 
@@ -89,32 +97,20 @@ def reset():
         user = Users.query.filter_by(email=form.email.data).first_or_404()
 
         subject = "Password reset requested"
-
-        # Here we use the URLSafeTimedSerializer we created in `util` at the
-        # beginning of the chapter
-        token = ts.dumps(user.email, salt='recover-key')
-
-        recover_url = url_for(
-            'reset_with_token',
-            token=token,
-            _external=True)
-
-        html = render_template(
-            'email/recover.html',
-            recover_url=recover_url)
-
-        # send_email is defined in myapp/util.py
+        token = _get_ts().dumps(user.email, salt='recover-key')
+        recover_url = url_for('auth.reset_with_token', token=token, _external=True)
+        html = render_template('email/recover.html', recover_url=recover_url)
         send_email(subject, user.email, html)
 
         flash('Check your email for a password reset link', "success")
-        return redirect(url_for('main.index'))
+        return redirect(url_for('main.home'))
     return render_template('auth/reset.html', form=form)
 
 
 @auth.route('/reset/<token>', methods=["GET", "POST"])
 def reset_with_token(token):
     try:
-        email = ts.loads(token, salt="recover-key", max_age=86400)
+        email = _get_ts().loads(token, salt="recover-key", max_age=86400)
     except:
         abort(404)
 
@@ -122,9 +118,7 @@ def reset_with_token(token):
 
     if form.validate_on_submit():
         user = Users.query.filter_by(email=email).first_or_404()
-
         user.set_password(form.password.data)
-
         db.session.add(user)
         db.session.commit()
         flash("Password reset successfully", "success")

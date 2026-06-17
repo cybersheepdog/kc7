@@ -3,7 +3,6 @@ from enum import Enum
 import random
 from faker import Faker
 from faker.providers import internet, lorem
-import names
 from datetime import date, datetime
 
 

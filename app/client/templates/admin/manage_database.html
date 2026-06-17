@@ -8,7 +8,14 @@
   </div>
 
 
- <!-- Begin Page Content -->
+ {% if adx_error %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+  <strong>ADX not configured:</strong> Cannot connect to Azure Data Explorer. Set your cluster credentials in <code>config.py</code> before using this page.<br>
+  <small class="text-muted">{{ adx_error }}</small>
+  <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+</div>
+{% endif %}
+<!-- Begin Page Content -->
   <div class="container-fluid">
     <div class="row">
          <!-- Pie Chart -->

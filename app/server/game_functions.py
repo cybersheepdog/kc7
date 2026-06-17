@@ -7,6 +7,16 @@ from sqlalchemy import asc
 from  sqlalchemy.sql.expression import func, select
 from datetime import datetime, date, time, timedelta
 
+# Module-level progress tracker — updated by start_game() and read by /admin/game_status
+GAME_PROGRESS = {
+    "running": False,
+    "complete": False,
+    "current_date": None,   # ISO string of the day currently being processed
+    "start_date": None,     # ISO string of the first game day
+    "end_date": None,       # ISO string of the last game day
+    "error": None,          # set if start_game() raises an exception
+}
+
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
 from app.server.models import db, GameSession
 from app.server.modules.organization.Company import Company, Employee
@@ -34,66 +44,96 @@ def start_game() -> None:
 
     1. Get the game session
     2. Generate starter data
-    3. Run infinite loop to generate additional activity
+    3. Iterate day-by-day to generate activity
     """
-    print("Starting the game...")
+    global GAME_PROGRESS
+    GAME_PROGRESS["running"] = True
+    GAME_PROGRESS["complete"] = False
+    GAME_PROGRESS["error"] = None
+    GAME_PROGRESS["current_date"] = None
+    GAME_PROGRESS["start_date"] = None
+    GAME_PROGRESS["end_date"] = None
 
-    # instantiate a logUploader. This instance is used by all other modules to send logs to azure
-    # we use a singular instances in order to queue up muliple rows of logs and send them all at once
-    global LOG_UPLOADER
-    LOG_UPLOADER = LogUploader(queue_limit=10000)
-    LOG_UPLOADER.create_tables(reset=True)
+    try:
+        print("Starting the game...")
 
-    global MALWARE_OBJECTS
-    MALWARE_OBJECTS = create_malware()
+        # instantiate a logUploader. This instance is used by all other modules to send logs to azure
+        # we use a singular instances in order to queue up muliple rows of logs and send them all at once
+        global LOG_UPLOADER
+        LOG_UPLOADER = LogUploader(queue_limit=10000)
+        LOG_UPLOADER.create_tables(reset=True)
 
-    global LEGIT_DOMAINS # Legit omains from Alex top 1M
-    LEGIT_DOMAINS = read_list_from_file('app/server/modules/helpers/alexa_top100k.txt')
+        global MALWARE_OBJECTS
+        MALWARE_OBJECTS = create_malware()
 
-    # The is current game session
-    # This data object tracks whether or not the game is currently running
-    # It allows us to start/stop/restart the game from the views
-    current_session = db.session.query(GameSession).get(1)
-    current_session.state = True
-    
-    print(f"Game started at {current_session.start_time}")
-    # TODO: allow users ot modify start time in the web UI    
-    # run startup functions 
-    employees = Employee.query.all()
-    actors = Actor.query.all()
-    if not (employees or actors):
-        employees, actors  = init_setup()
-    
-    print("initialization complete...")
+        global LEGIT_DOMAINS # Legit domains from Alexa top 1M
+        LEGIT_DOMAINS = read_list_from_file('app/server/modules/helpers/alexa_top100k.txt')
 
-    # This is where the action happens
-    # Iterate through each day in the loop
-    # You can customize the length of the game in the company.yaml config file
-    company = Company.query.get(1)
-    current_date = date.fromisoformat(company.activity_start_date)
-    while current_date <= date.fromisoformat(company.activity_end_date):
-        print("##########################################")
-        print(f"## Running for day {current_date}...")
-        print("##########################################")
-        
-        for actor in actors: 
-            if actor.is_default_actor:
-                # Default actor is used to create noise
-                generate_activity_new(actor, current_date, employees, num_passive_dns=200) 
-            else:
-                # generate activity of actors defined in actor config
-                # num_email is actually number of emails waves sent
-                # waves contain multiple emails
-                # TODO: abstract this out to the actor / make this more elegant
-                generate_activity_new(actor, 
-                                  current_date,
-                                  employees, 
-                                  num_passive_dns=random.randint(5, 10), 
-                                  num_email=random.randint(0, 3)
-                )
+        # The is current game session
+        # This data object tracks whether or not the game is currently running
+        # It allows us to start/stop/restart the game from the views
+        current_session = db.session.get(GameSession, 1)
+        current_session.state = True
+        db.session.commit()
 
-        current_date += timedelta(days=1)
-    print("Done running!")
+        print(f"Game started at {current_session.start_time}")
+        # run startup functions
+        employees = Employee.query.all()
+        actors = Actor.query.all()
+        if not (employees or actors):
+            employees, actors = init_setup()
+
+        print("initialization complete...")
+
+        # This is where the action happens
+        # Iterate through each day in the loop
+        # You can customize the length of the game in the company.yaml config file
+        company = db.session.get(Company, 1)
+        start_date = date.fromisoformat(company.activity_start_date)
+        end_date = date.fromisoformat(company.activity_end_date)
+        current_date = start_date
+
+        GAME_PROGRESS["start_date"] = start_date.isoformat()
+        GAME_PROGRESS["end_date"] = end_date.isoformat()
+
+        while current_date <= end_date:
+            GAME_PROGRESS["current_date"] = current_date.isoformat()
+
+            print("##########################################")
+            print(f"## Running for day {current_date}...")
+            print("##########################################")
+
+            for actor in actors:
+                if actor.is_default_actor:
+                    # Default actor is used to create noise
+                    generate_activity_new(actor, current_date, employees, num_passive_dns=200)
+                else:
+                    # generate activity of actors defined in actor config
+                    generate_activity_new(actor,
+                                      current_date,
+                                      employees,
+                                      num_passive_dns=random.randint(5, 10),
+                                      num_email=random.randint(0, 3)
+                    )
+
+            current_date += timedelta(days=1)
+
+        print("Done running!")
+        GAME_PROGRESS["complete"] = True
+
+    except Exception as e:
+        print(f"start_game() failed: {e}")
+        GAME_PROGRESS["error"] = str(e)
+        raise
+    finally:
+        GAME_PROGRESS["running"] = False
+        # Mark game session as stopped in DB
+        try:
+            current_session = db.session.get(GameSession, 1)
+            current_session.state = False
+            db.session.commit()
+        except Exception:
+            pass
 
     # count_cycles = 10
     # for i in range(count_cycles):
@@ -276,7 +316,7 @@ def create_actors() -> None:
 
     TODO: there should be some validation of actor configs prior to creation
     """
-    company = Company.query.get(1) # TODO: This works because we only have one company
+    company = db.session.get(Company, 1) # TODO: This works because we only have one company
 
     # Instantiate a default actor - this actor should always exist
     # the default actor is used to generate background noise in the game

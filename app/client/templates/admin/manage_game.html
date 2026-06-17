@@ -10,19 +10,47 @@
     <!-- Content Row -->
     <div class="row">
 
-        
-        <!-- Default Card Example -->
-        <div class="card mb-4">
+        <!-- Game State Card -->
+        <div class="card mb-4 w-100">
             <div class="card-header">
                 <h6 class="m-0 font-weight-bold text-primary">Game State</h6>
             </div>
             <div class="card-body">
-                The game state is: <b id="state"> {{ game_state }}</b>
+                <p>The game state is: <b id="state">{{ game_state }}</b></p>
+
+                <!-- Progress bar (hidden until generation starts) -->
+                <div id="progress-section" style="display:none;">
+                    <hr>
+                    <p class="mb-1">
+                        Generating data for day <b id="current-date">—</b>
+                        (through <b id="end-date">—</b>)
+                    </p>
+                    <div class="progress mb-2" style="height: 22px;">
+                        <div id="progress-bar"
+                             class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                             role="progressbar"
+                             style="width: 0%"
+                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                            0%
+                        </div>
+                    </div>
+                    <small class="text-muted">The UI remains responsive while data generates in the background.</small>
+                </div>
+
+                <!-- Error banner (hidden unless an error occurs) -->
+                <div id="error-section" class="alert alert-danger mt-3" style="display:none;">
+                    <b>Error during generation:</b> <span id="error-message"></span>
+                </div>
+
+                <!-- Completion banner (hidden until done) -->
+                <div id="complete-section" class="alert alert-success mt-3" style="display:none;">
+                    Data generation complete! Players can now query the logs.
+                </div>
             </div>
         </div>
 
 
-        <!-- Default Card Example -->
+        <!-- Start Card -->
         <div class="card mb-4">
             <div class="card-header">
                 <h6 class="m-0 font-weight-bold text-primary">Start the Game</h6>
@@ -39,7 +67,7 @@
             </div>
         </div>
 
-        <!-- Default Card Example -->
+        <!-- Stop Card -->
         <div class="card mb-4">
             <div class="card-header">
                 <h6 class="m-0 font-weight-bold text-primary">Stop the Game</h6>
@@ -57,7 +85,7 @@
         </div>
 
 
-        <!-- Default Card Example -->
+        <!-- Restart Card -->
         <div class="card mb-4">
             <div class="card-header">
                 <h6 class="m-0 font-weight-bold text-primary">Restart the Game</h6>
@@ -75,45 +103,196 @@
             </div>
         </div>
 
+
+        <!-- Timer Card -->
+        <div class="card mb-4 w-100">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Session Timer</h6>
+                {% if game_session and game_session.uses_timer %}
+                  <span class="badge badge-success">Enabled</span>
+                {% else %}
+                  <span class="badge badge-secondary">Disabled</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    When the timer is enabled and the end time has passed, players can no longer
+                    earn points from indicators or challenges.
+                </p>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                  {% if messages %}
+                    {% for category, message in messages %}
+                      <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show py-2" role="alert">
+                        {{ message }}
+                        <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+                      </div>
+                    {% endfor %}
+                  {% endif %}
+                {% endwith %}
+
+                <!-- Current state -->
+                {% if game_session and game_session.end_time %}
+                <div class="alert {% if game_session.uses_timer %}alert-warning{% else %}alert-secondary{% endif %} py-2 mb-3">
+                    <strong>End time:</strong>
+                    {{ game_session.end_time.strftime('%Y-%m-%d %H:%M') }}
+                    {% if game_session.uses_timer %}
+                      {% if game_session.end_time < now %}
+                        &mdash; <span class="text-danger font-weight-bold">Expired</span>
+                      {% else %}
+                        &mdash; <span class="text-success">Active</span>
+                      {% endif %}
+                    {% else %}
+                      &mdash; Timer disabled
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Set end time -->
+                <form action="/admin/set_session_timer" method="post" class="mb-3">
+                    <div class="form-row align-items-end">
+                        <div class="col">
+                            <label class="small font-weight-bold">Set End Date / Time</label>
+                            <input type="datetime-local" class="form-control" name="end_time"
+                                   value="{{ game_session.end_time.strftime('%Y-%m-%dT%H:%M') if game_session and game_session.end_time else '' }}">
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-clock mr-1"></i> Set &amp; Enable
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Toggle -->
+                <form action="/admin/toggle_session_timer" method="post">
+                    {% if game_session and game_session.uses_timer %}
+                    <button type="submit" class="btn btn-outline-secondary btn-sm"
+                            onclick="return confirm('Disable the session timer?')">
+                        <i class="fas fa-pause mr-1"></i> Disable Timer
+                    </button>
+                    {% else %}
+                    <button type="submit" class="btn btn-outline-success btn-sm"
+                            {% if not (game_session and game_session.end_time) %}disabled title="Set an end time first"{% endif %}>
+                        <i class="fas fa-play mr-1"></i> Enable Timer
+                    </button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+
     </div><!-- end of row-->
 
    <script src="{{ url_for('static', filename='js/datatables.min.js') }}"></script>
 
 
     <script>
-    
+    var statusPollInterval = null;
+
     function updateGameState(STATE){
-        console.log(STATE)
         $('#state').text(STATE);
     }
 
     function start_game() {
-        updateGameState('True')
-        $.get("/admin/start_game",
-            function(data) {
-                console.log(data.STATE)
-                pdateGameState(data.STATE)
-            });
+        updateGameState('Starting...');
+        $.get("/admin/start_game", function(data) {
+            updateGameState(data.STATE ? 'True' : 'False');
+            startPollingStatus();
+        });
     }
 
     function stop_game() {
-        $.get("/admin/stop_game",
-            function(data) {
-                updateGameState(data.STATE)
-            });
+        $.get("/admin/stop_game", function(data) {
+            updateGameState(data.STATE);
+            stopPollingStatus();
+        });
     }
 
     function restart_game() {
-        let text = "Are you sure you want to restart the game? This will reset all team scores"
-        if (confirm(text) == true) {
-            $.get("/admin/restart_game",
-                function(data) {
-                    updateGameState(data.STATE)
-                });
+        let text = "Are you sure you want to restart the game? This will reset all team scores";
+        if (confirm(text)) {
+            $.get("/admin/restart_game", function(data) {
+                updateGameState(data.STATE);
+                stopPollingStatus();
+                resetProgressUI();
+            });
         }
     }
-    
-    $('#indicators').DataTable();
+
+    function startPollingStatus() {
+        if (statusPollInterval) return; // already polling
+        $('#progress-section').show();
+        $('#complete-section').hide();
+        $('#error-section').hide();
+        statusPollInterval = setInterval(pollGameStatus, 2000);
+        pollGameStatus(); // immediate first check
+    }
+
+    function stopPollingStatus() {
+        if (statusPollInterval) {
+            clearInterval(statusPollInterval);
+            statusPollInterval = null;
+        }
+    }
+
+    function resetProgressUI() {
+        $('#progress-section').hide();
+        $('#complete-section').hide();
+        $('#error-section').hide();
+        setProgressBar(0);
+    }
+
+    function setProgressBar(pct) {
+        $('#progress-bar')
+            .css('width', pct + '%')
+            .attr('aria-valuenow', pct)
+            .text(pct + '%');
+    }
+
+    function pollGameStatus() {
+        $.get("/admin/game_status", function(data) {
+            if (data.current_date) {
+                $('#current-date').text(data.current_date);
+            }
+            if (data.end_date) {
+                $('#end-date').text(data.end_date);
+            }
+            setProgressBar(data.progress_pct || 0);
+
+            if (data.error) {
+                stopPollingStatus();
+                $('#error-message').text(data.error);
+                $('#error-section').show();
+                updateGameState('Error');
+                return;
+            }
+
+            if (data.complete) {
+                stopPollingStatus();
+                setProgressBar(100);
+                $('#complete-section').show();
+                updateGameState('Complete');
+                return;
+            }
+
+            if (!data.running) {
+                stopPollingStatus();
+            }
+        });
+    }
+
+    // On page load: check if a game is already running and resume polling if so
+    $(document).ready(function() {
+        $.get("/admin/game_status", function(data) {
+            if (data.running) {
+                startPollingStatus();
+            } else if (data.complete) {
+                $('#progress-section').show();
+                setProgressBar(100);
+                $('#complete-section').show();
+            }
+        });
+    });
 
     </script>
 

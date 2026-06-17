@@ -4,7 +4,6 @@ import json
 from faker import Faker
 import glob
 from faker.providers import internet
-import names
 from datetime import date
 
 # Import internal modules
@@ -250,7 +249,7 @@ class Actor(Base):
         """
         company = Company.query.first()
 
-        email_prefix = "_".join(names.get_full_name().split(" ")).lower()
+        email_prefix = "_".join(fake.name().split(" ")).lower()
         partner_domain = random.choice(company.get_partners())
         return f"{email_prefix}@{partner_domain}"
 

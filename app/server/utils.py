@@ -16,7 +16,6 @@ from itsdangerous import base64_encode
 import string
 from functools import wraps
 from time import time
-import names
 import numpy as np
 
 # instantiate faker
@@ -168,10 +167,10 @@ def get_actors() -> "list[Actor]":
 
 
 def get_email_prefix() -> str:
-    return "_".join(names.get_full_name().split(" ")).lower()
+    return "_".join(fake.name().split(" ")).lower()
 
 def write_seed_files(max_num_files: int = 25):
-    eicar_string = 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+    eicar_string = r'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
     for i in range(1, max_num_files):
         file_name = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))+random.choice(['.exe','.dll','.dat'])
         unique_string = f"Welcome to KC7, the cybersecurity game. If you're a player, congrats! You found malware file {file_name}. If you aren't a player... how'd you find us? Visit kc7cyber.com to learn more!"

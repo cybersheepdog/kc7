@@ -1,0 +1,251 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Manage Challenges</h1>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for category, message in messages %}
+      <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+        {{ message }}<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+      </div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <!-- Challenge List -->
+  <div class="row">
+    <div class="col-12">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+          <h6 class="m-0 font-weight-bold text-primary">Challenge List</h6>
+          <span class="badge badge-primary badge-pill">{{ challenges|length }} total</span>
+        </div>
+        <div class="card-body">
+          {% if challenges %}
+          <div class="table-responsive">
+            <table class="table table-bordered table-hover table-sm" width="100%">
+              <thead class="thead-light">
+                <tr>
+                  <th style="width:3rem;">#</th>
+                  <th>Name</th>
+                  <th>Category</th>
+                  <th>Round</th>
+                  <th>Points</th>
+                  <th>Description</th>
+                  <th>Answer(s)</th>
+                  <th style="width:10rem;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for ch in challenges %}
+                <tr>
+                  <td>{{ ch.id }}</td>
+                  <td><strong>{{ ch.name }}</strong></td>
+                  <td><span class="badge badge-info">{{ ch.category }}</span></td>
+                  <td>
+                    {% if ch.round %}
+                      <span class="badge badge-warning">{{ ch.round.name }}</span>
+                    {% else %}
+                      <span class="text-muted small">Global</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-right font-weight-bold">{{ ch.value }}</td>
+                  <td class="small text-muted" style="max-width:220px;">{{ ch.description }}</td>
+                  <td class="small"><code>{{ ch.answer }}</code></td>
+                  <td>
+                    <button class="btn btn-sm btn-warning btn-block mb-1"
+                            data-toggle="modal" data-target="#editModal"
+                            data-id="{{ ch.id }}"
+                            data-name="{{ ch.name }}"
+                            data-category="{{ ch.category }}"
+                            data-value="{{ ch.value }}"
+                            data-description="{{ ch.description }}"
+                            data-answer="{{ ch.answer }}"
+                            data-round-id="{{ ch.round_id or '' }}">
+                      <i class="fas fa-edit mr-1"></i> Edit
+                    </button>
+                    <form action="/admin/delete_challenge" method="post">
+                      <input type="hidden" name="challenge_id" value="{{ ch.id }}">
+                      <button type="submit" class="btn btn-danger btn-sm btn-block"
+                              onclick="return confirm('Delete this challenge and all its solve records?')">
+                        <i class="fas fa-trash mr-1"></i> Delete
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">No challenges yet. Add one below or import from CSV.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+
+    <!-- Add Single Challenge -->
+    <div class="col-lg-6">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Add Challenge</h6>
+        </div>
+        <div class="card-body">
+          <form action="/admin/add_challenge" method="post">
+            <div class="form-group">
+              <label>Challenge Name <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="name" required
+                     placeholder="e.g. What is the attacker's C2 domain?">
+            </div>
+            <div class="form-row">
+              <div class="form-group col-md-6">
+                <label>Category</label>
+                <input type="text" class="form-control" name="category"
+                       placeholder="e.g. Threat Hunting" value="General">
+              </div>
+              <div class="form-group col-md-3">
+                <label>Points</label>
+                <input type="number" class="form-control" name="value" value="100" min="1">
+              </div>
+              <div class="form-group col-md-3">
+                <label>Round</label>
+                <select class="form-control" name="round_id">
+                  <option value="">Global</option>
+                  {% for r in rounds %}
+                  <option value="{{ r.id }}">{{ r.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Description / Question <span class="text-danger">*</span></label>
+              <textarea class="form-control" name="description" rows="3" required
+                        placeholder="Describe the challenge. Players will see this."></textarea>
+            </div>
+            <div class="form-group">
+              <label>Answer(s) <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="answer" required
+                     placeholder="Use semicolons to separate multiple accepted answers">
+              <small class="form-text text-muted">Case-insensitive. Separate multiple answers with <code>;</code>.</small>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fas fa-plus mr-1"></i> Add Challenge
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- CSV Bulk Import -->
+    <div class="col-lg-6">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Bulk Import from CSV</h6>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-2">
+            CSV columns (header row optional): <code>name, value, description, answer, category</code>
+          </p>
+          <p class="text-muted small mb-3">
+            Use <code>;</code> for multiple accepted answers. All imported challenges become <strong>Global</strong> unless reassigned.
+          </p>
+          <form action="/admin/import_challenges_csv" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+              <div class="custom-file">
+                <input type="file" class="custom-file-input" id="csv_file" name="csv_file" accept=".csv">
+                <label class="custom-file-label" for="csv_file">Choose CSV file...</label>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success btn-block">
+              <i class="fas fa-upload mr-1"></i> Import Challenges
+            </button>
+          </form>
+          <hr>
+          <p class="small text-muted mb-1"><strong>Example:</strong></p>
+          <pre class="small bg-light p-2 rounded">name,value,description,answer,category
+C2 Domain,100,What domain did the attacker use?,evil.com,Network
+Hash,150,SHA256 of the dropper?,abc123;ABC123,Malware</pre>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal fade" id="editModal" tabindex="-1" role="dialog" aria-labelledby="editModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <form action="/admin/edit_challenge" method="post">
+          <input type="hidden" name="challenge_id" id="edit-id">
+          <div class="modal-header">
+            <h5 class="modal-title" id="editModalLabel">Edit Challenge</h5>
+            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>Challenge Name <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="name" id="edit-name" required>
+            </div>
+            <div class="form-row">
+              <div class="form-group col-md-5">
+                <label>Category</label>
+                <input type="text" class="form-control" name="category" id="edit-category">
+              </div>
+              <div class="form-group col-md-3">
+                <label>Points</label>
+                <input type="number" class="form-control" name="value" id="edit-value" min="1">
+              </div>
+              <div class="form-group col-md-4">
+                <label>Round</label>
+                <select class="form-control" name="round_id" id="edit-round-id">
+                  <option value="">Global</option>
+                  {% for r in rounds %}
+                  <option value="{{ r.id }}">{{ r.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Description / Question <span class="text-danger">*</span></label>
+              <textarea class="form-control" name="description" id="edit-description" rows="3" required></textarea>
+            </div>
+            <div class="form-group">
+              <label>Answer(s) <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="answer" id="edit-answer" required>
+              <small class="form-text text-muted">Separate multiple answers with <code>;</code>.</small>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-save mr-1"></i> Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    $('#editModal').on('show.bs.modal', function(event) {
+      var btn = $(event.relatedTarget);
+      $('#edit-id').val(btn.data('id'));
+      $('#edit-name').val(btn.data('name'));
+      $('#edit-category').val(btn.data('category'));
+      $('#edit-value').val(btn.data('value'));
+      $('#edit-description').val(btn.data('description'));
+      $('#edit-answer').val(btn.data('answer'));
+      var roundId = btn.data('round-id');
+      $('#edit-round-id').val(roundId !== undefined ? String(roundId) : '');
+    });
+
+    document.getElementById('csv_file').addEventListener('change', function() {
+      this.nextElementSibling.textContent = this.files[0] ? this.files[0].name : 'Choose CSV file...';
+    });
+  </script>
+
+{% endblock %}
