@@ -110,7 +110,21 @@ class Users(AuthBase, RoleMixin):
     def check_password(self, password):
         if not self.password:
             return False
-        return check_password_hash(self.password, password)
+        try:
+            return check_password_hash(self.password, password)
+        except ValueError:
+            # Hash is in flask-security format (bcrypt/argon2) from a previous
+            # password reset bug. Try flask-security's verifier and, if it
+            # passes, re-save in werkzeug format so future logins work normally.
+            try:
+                from flask_security.utils import verify_password as _fs_verify
+                if _fs_verify(password, self.password):
+                    self.set_password(password)
+                    db.session.commit()
+                    return True
+            except Exception:
+                pass
+            return False
 
     @property
     def is_authenticated(self):

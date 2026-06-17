@@ -103,7 +103,9 @@ main = Blueprint("main", __name__)
 
 @main.route("/")
 def home():
-    return render_template("main/score.html")
+    if current_user.is_authenticated:
+        return render_template("main/score.html")
+    return redirect(url_for("auth.login"))
 
 
 @main.route("/admin/manage_game")
