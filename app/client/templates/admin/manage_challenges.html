@@ -148,12 +148,22 @@
         </div>
         <div class="card-body">
           <p class="text-muted small mb-2">
-            CSV columns (header row optional): <code>name, value, description, answer, category</code>
+            CSV columns (header row optional): <code>name, value, description, answer, category[, round]</code>
           </p>
           <p class="text-muted small mb-3">
-            Use <code>;</code> for multiple accepted answers. All imported challenges become <strong>Global</strong> unless reassigned.
+            Use <code>;</code> for multiple accepted answers. The optional <code>round</code> column must match an existing round name (case-insensitive).
+            The <em>Default Round</em> below applies to rows that have no round column or an unrecognized round name.
           </p>
           <form action="/admin/import_challenges_csv" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+              <label class="small font-weight-bold">Default Round <span class="text-muted font-weight-normal">(optional)</span></label>
+              <select class="form-control form-control-sm" name="default_round_id">
+                <option value="">— Global (no round) —</option>
+                {% for r in rounds %}
+                  <option value="{{ r.id }}">{{ r.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
             <div class="form-group">
               <div class="custom-file">
                 <input type="file" class="custom-file-input" id="csv_file" name="csv_file" accept=".csv">
@@ -165,10 +175,11 @@
             </button>
           </form>
           <hr>
-          <p class="small text-muted mb-1"><strong>Example:</strong></p>
-          <pre class="small bg-light p-2 rounded">name,value,description,answer,category
-C2 Domain,100,What domain did the attacker use?,evil.com,Network
-Hash,150,SHA256 of the dropper?,abc123;ABC123,Malware</pre>
+          <p class="small text-muted mb-1"><strong>Example (with round column):</strong></p>
+          <pre class="small bg-light p-2 rounded">name,value,description,answer,category,round
+C2 Domain,100,What domain did the attacker use?,evil.com,Network,Round 1
+Hash,150,SHA256 of the dropper?,abc123;ABC123,Malware,Round 2
+Generic Q,50,A global question,42,General,</pre>
         </div>
       </div>
     </div>

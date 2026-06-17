@@ -802,7 +802,10 @@ def delete_challenge():
 def import_challenges_csv():
     """
     Admin: bulk-import challenges from a CSV file.
-    Expected columns (with or without header): name, value, description, answer, category
+    Expected columns (with or without header):
+        name, value, description, answer, category[, round]
+    The optional 6th column 'round' is matched by name against existing GameRounds.
+    A fallback round can also be selected from the form dropdown.
     """
     import csv, io
     try:
@@ -810,6 +813,13 @@ def import_challenges_csv():
         if not f or not f.filename:
             flash("No file selected.", "error")
             return redirect(url_for("main.manage_challenges"))
+
+        # Optional fallback round from the form dropdown
+        fallback_round_id_str = request.form.get("default_round_id", "").strip()
+        fallback_round_id = int(fallback_round_id_str) if fallback_round_id_str else None
+
+        # Build a lookup map: lowercase round name → id
+        round_map = {r.name.lower(): r.id for r in GameRound.query.all()}
 
         stream  = io.StringIO(f.stream.read().decode("utf-8-sig"), newline=None)
         reader  = csv.reader(stream)
@@ -820,10 +830,17 @@ def import_challenges_csv():
             if len(row) < 5:
                 skipped += 1
                 continue
-            name, value, description, answer, category = [c.strip() for c in row[:5]]
+            cols = [c.strip() for c in row]
+            name, value, description, answer, category = cols[:5]
             # Skip header row
             if i == 0 and name.lower() == "name":
                 continue
+
+            # Resolve round: column 6 takes priority, then fallback dropdown
+            round_id = fallback_round_id
+            if len(cols) >= 6 and cols[5]:
+                round_id = round_map.get(cols[5].lower(), fallback_round_id)
+
             try:
                 ch = Challenge(
                     name=name,
@@ -831,6 +848,7 @@ def import_challenges_csv():
                     description=description,
                     answer=answer,
                     category=category or "General",
+                    round_id=round_id,
                 )
                 db.session.add(ch)
                 added += 1
