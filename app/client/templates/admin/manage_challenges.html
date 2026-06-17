@@ -23,10 +23,21 @@
         </div>
         <div class="card-body">
           {% if challenges %}
+          <form id="massDeleteForm" action="/admin/mass_delete_challenges" method="post">
+          <div class="mb-2 d-flex align-items-center">
+            <button type="button" id="selectAllBtn" class="btn btn-sm btn-outline-secondary mr-2">
+              <i class="fas fa-check-square mr-1"></i> Select All
+            </button>
+            <button type="submit" class="btn btn-sm btn-danger" id="massDeleteBtn" disabled
+                    onclick="return confirm('Delete all selected challenges and their solve records?')">
+              <i class="fas fa-trash mr-1"></i> Delete Selected (<span id="selectedCount">0</span>)
+            </button>
+          </div>
           <div class="table-responsive">
             <table class="table table-bordered table-hover table-sm" width="100%">
               <thead class="thead-light">
                 <tr>
+                  <th style="width:2.5rem;"><input type="checkbox" id="selectAllCheck" title="Select all"></th>
                   <th style="width:3rem;">#</th>
                   <th>Name</th>
                   <th>Category</th>
@@ -40,6 +51,7 @@
               <tbody>
                 {% for ch in challenges %}
                 <tr>
+                  <td><input type="checkbox" class="challenge-checkbox" name="challenge_ids" value="{{ ch.id }}"></td>
                   <td>{{ ch.id }}</td>
                   <td><strong>{{ ch.name }}</strong></td>
                   <td><span class="badge badge-info">{{ ch.category }}</span></td>
@@ -78,6 +90,7 @@
               </tbody>
             </table>
           </div>
+          </form>
           {% else %}
           <p class="text-muted mb-0">No challenges yet. Add one below or import from CSV.</p>
           {% endif %}
@@ -257,6 +270,40 @@ Generic Q,50,A global question,42,General,</pre>
     document.getElementById('csv_file').addEventListener('change', function() {
       this.nextElementSibling.textContent = this.files[0] ? this.files[0].name : 'Choose CSV file...';
     });
+
+    // Mass delete checkbox logic
+    function updateMassDeleteBtn() {
+      var checked = document.querySelectorAll('.challenge-checkbox:checked').length;
+      document.getElementById('selectedCount').textContent = checked;
+      document.getElementById('massDeleteBtn').disabled = checked === 0;
+    }
+
+    document.querySelectorAll('.challenge-checkbox').forEach(function(cb) {
+      cb.addEventListener('change', updateMassDeleteBtn);
+    });
+
+    var selectAllCheck = document.getElementById('selectAllCheck');
+    if (selectAllCheck) {
+      selectAllCheck.addEventListener('change', function() {
+        document.querySelectorAll('.challenge-checkbox').forEach(function(cb) {
+          cb.checked = selectAllCheck.checked;
+        });
+        updateMassDeleteBtn();
+      });
+    }
+
+    var selectAllBtn = document.getElementById('selectAllBtn');
+    if (selectAllBtn) {
+      selectAllBtn.addEventListener('click', function() {
+        var allChecked = document.querySelectorAll('.challenge-checkbox:checked').length ===
+                         document.querySelectorAll('.challenge-checkbox').length;
+        document.querySelectorAll('.challenge-checkbox').forEach(function(cb) {
+          cb.checked = !allChecked;
+        });
+        if (selectAllCheck) selectAllCheck.checked = !allChecked;
+        updateMassDeleteBtn();
+      });
+    }
   </script>
 
 {% endblock %}

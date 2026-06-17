@@ -108,6 +108,8 @@ class Users(AuthBase, RoleMixin):
         self.password = generate_password_hash(password)
 
     def check_password(self, password):
+        if not self.password:
+            return False
         return check_password_hash(self.password, password)
 
     @property

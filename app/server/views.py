@@ -796,6 +796,28 @@ def delete_challenge():
     return redirect(url_for("main.manage_challenges"))
 
 
+@main.route("/admin/mass_delete_challenges", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def mass_delete_challenges():
+    """Admin: delete multiple challenges at once."""
+    try:
+        ids = request.form.getlist("challenge_ids")
+        if not ids:
+            flash("No challenges selected.", "warning")
+            return redirect(url_for("main.manage_challenges"))
+        ids = [int(i) for i in ids]
+        Solve.query.filter(Solve.challenge_id.in_(ids)).delete(synchronize_session=False)
+        AnswerAttempt.query.filter(AnswerAttempt.challenge_id.in_(ids)).delete(synchronize_session=False)
+        Challenge.query.filter(Challenge.id.in_(ids)).delete(synchronize_session=False)
+        db.session.commit()
+        flash("Deleted " + str(len(ids)) + " challenge(s).", "success")
+    except Exception as e:
+        print("mass_delete_challenges error: " + str(e))
+        flash("Mass delete failed: " + str(e), "error")
+    return redirect(url_for("main.manage_challenges"))
+
+
 @main.route("/admin/import_challenges_csv", methods=["POST"])
 @roles_required("Admin")
 @login_required
