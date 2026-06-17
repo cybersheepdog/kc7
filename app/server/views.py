@@ -384,8 +384,7 @@ def edit_user():
 
         # --- Password reset ---
         if new_pass:
-            from flask_security import hash_password
-            user.password = hash_password(new_pass)
+            user.set_password(new_pass)
 
         # --- Role toggle ---
         if new_role in ("Admin", "Player"):

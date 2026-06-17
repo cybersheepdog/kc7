@@ -108,3 +108,7 @@ testlogs/
 # *.md  # removed — README.md should be tracked
 *.DS_Store
 /app/flaskr.db
+CACHEDIR.TAG
+bin/
+include/
+pyvenv.cfg
