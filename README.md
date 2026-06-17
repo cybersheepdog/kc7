@@ -1,5 +1,10 @@
 # KC7 — A Cybersecurity Game
 
+[![Build Status](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue.svg)](https://shields.io/)
+![Maintenance](https://img.shields.io/maintenance/yes/2026.svg?style=flat-square)
+[![GitHub last commit](https://img.shields.io/github/last-commit/cybersheepdog/kc7.svg?style=flat-square)](https://github.com/cybersheepdog/kc7/commit/master)
+![GitHub](https://img.shields.io/github/license/cybersheepdog/kc7)
+
 KC7 is a cybersecurity training platform that lets players learn threat investigation and threat-intelligence skills using realistic simulated data. Players use **KQL (Kusto Query Language)** inside **Azure Data Explorer** to triage logs and uncover attacker activity across a fictitious company's environment spanning the full Cyber Kill Chain.
 
 Get started at http://kc7cyber.com/modules
