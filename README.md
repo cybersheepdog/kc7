@@ -7,16 +7,11 @@
 
 KC7 is a cybersecurity training platform that lets players learn threat investigation and threat-intelligence skills using realistic simulated data. Players use **KQL (Kusto Query Language)** inside **Azure Data Explorer** to triage logs and uncover attacker activity across a fictitious company's environment spanning the full Cyber Kill Chain.
 
-Get started at http://kc7cyber.com/modules
+## I am updating and expanding upon the great work already done by the KC7 Foundation and all the contributers listed at the bottom of this README.
 
-<img width="1378" alt="KC7 screenshot" src="https://github.com/KC7-Foundation/kc7/assets/9474932/e913abab-373f-45d0-9485-8005fde3c73e">
+Stay tuned for a roadmap of additional updates and features
 
 ---
-
-## 📖 Background
-
-[Read the origin story](https://mem.ai/p/nlIjcw3yPTbb0DNDfPAI)
-
 ## 👨🏽‍🎓 Who is this for?
 
 - High school and college students interested in cybersecurity
@@ -186,6 +181,10 @@ The Teams page shows a ranked leaderboard with a horizontal bar chart, split acr
 ---
 
 # Deprecated
+
+## 📖 Background
+
+[Read the origin story](https://mem.ai/p/nlIjcw3yPTbb0DNDfPAI)
 
 ## 🤠 How to Contribute
 
