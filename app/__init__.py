@@ -139,6 +139,16 @@ with app.app_context():
     _seed_db()
 
 
+# Jinja2 custom filters
+@app.template_filter('format_number')
+def format_number(value):
+    """Add thousands-separator commas to an integer."""
+    try:
+        return "{:,}".format(int(value))
+    except (ValueError, TypeError):
+        return value
+
+
 # HTTP error handling
 @app.errorhandler(404)
 def not_found(error):

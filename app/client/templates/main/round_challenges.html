@@ -68,7 +68,8 @@
       </span>
     </div>
     <div class="card-body p-0">
-      <div class="accordion" id="accordion-{{ loop.index }}">
+      {% set cat_index = loop.index %}
+      <div class="accordion" id="accordion-{{ cat_index }}">
         {% for ch in by_category[cat] %}
         {% set solved = ch.id in solved_ids %}
         <div class="card mb-0 border-0 border-bottom">
@@ -89,7 +90,7 @@
             </div>
           </div>
           <div id="collapse-{{ ch.id }}" class="collapse"
-               data-parent="#accordion-{{ loop.index }}">
+               data-parent="#accordion-{{ cat_index }}">
             <div class="card-body bg-light">
               <p class="mb-3">{{ ch.description }}</p>
               {% if solved %}
