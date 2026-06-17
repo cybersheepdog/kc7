@@ -185,6 +185,8 @@ The Teams page shows a ranked leaderboard with a horizontal bar chart, split acr
 
 ---
 
+# Deprecated
+
 ## 🤠 How to Contribute
 
 See the [wiki](https://github.com/cybersheepdog/kc7/wiki) for codebase structure and contribution guidelines.
