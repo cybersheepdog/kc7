@@ -92,6 +92,8 @@ Players answer written questions that test their analysis and knowledge. Challen
 
 Answers are also **normalized before comparison** 🆕, so structurally-identical indicators are accepted no matter how a player formats them: `http://bad.com`, `bad.com`, and `bad.com/` all match, and analyst-style *defanged* notation is understood (`hxxp://bad[.]com`, `1[.]2[.]3[.]4`, `user[at]evil.com`). The same normalization is applied to indicator (mitigation) submissions. It only ever *adds* matches — every answer the old exact-match logic accepted is still accepted — and Windows file paths / registry keys are left intact.
 
+**Scoring** is time-weighted by default (earlier solves earn more). Optionally 🆕, **dynamic / first-blood scoring** can be enabled in `config.py` (`DYNAMIC_SCORING_ENABLED`): a challenge's value then decays as more teams solve it (CTFd-style, tunable via `DYNAMIC_SCORING_MINIMUM` / `DYNAMIC_SCORING_DECAY`) and the first solver earns a `FIRST_BLOOD_BONUS_PCT` bonus. It's off by default, so existing scoring is unchanged unless you turn it on.
+
 #### Rounds (Named Game Sessions)
 Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
 
@@ -111,6 +113,8 @@ Scenarios now span the **full Cyber Kill Chain**, so investigations go far beyon
 - **Persistence** — **scheduled tasks** and **Run/RunOnce registry** keys that re-launch malware after a reboot.
 - **Cloud attacks** — **session/token hijacking** (impossible-travel sign-ins) and **exfiltration via public storage buckets**.
 
+**Campaign mode** 🆕 (optional, `CAMPAIGN_MODE_ENABLED` in `config.py`, off by default): when enabled, an actor's post-compromise stages (Kerberoasting → lateral movement → log clearing → persistence → cloud) all thread through **one pinned compromised host and one C2 IP** per actor, stable across the whole activity window — and they **unfold in order over time**, each stage dwelling a randomized number of working hours after the previous one rather than all happening at once. Together that turns scattered events into a single intrusion players can pivot through and attribute. With it off, each technique picks its own victim/IP and timing as before.
+
 This activity surfaces across new endpoint and cloud log sources (`SecurityEvents`, `CloudSignInLogs`, `CloudStorageLogs`) alongside the existing tables — see [Simulated Telemetry](#-simulated-telemetry-adx-tables).
 
 ---
@@ -118,10 +122,16 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 ### For Admins
 
 #### Manage Game (`/admin/manage_game`)
-- Start, stop, and restart the game
-- Background data generation with live progress bar
+- Start, stop, and restart the game — **Stop** cancels a run mid-generation 🆕
+- Background data generation with a live progress bar and a **streamed progress log** 🆕
 - **Session Timer** — set an end date/time after which no new points can be scored from either indicators or challenges. Enabled and disabled independently of the end time.
-- **Scenario & Scoring Tools** panel 🆕 — one-click links to the Scenario Preview (dry run), the Scenario PDF exports (player packet / instructor answer key), and the Score Audit.
+- **Scenario & Scoring Tools** panel 🆕 — one-click links to the Scenario Preview (dry run), the Scenario PDF exports (player packet / instructor answer key), the Score Audit, and the **Run History**.
+- **Run History** (`/admin/run_history`) 🆕 — a log of each data-generation run: when it started/finished, how long it took, success / error / **cancelled**, the scenario window, and **per-table ingested-row counts**. Plain text, or `?format=json`.
+
+#### Manage Scenario (`/admin/manage_scenario`) 🆕
+- Author the **scenario content** — actor and malware configs — from the browser instead of hand-editing YAML files on disk.
+- Lists every config with a quick summary, and lets you **edit, clone, or delete** them in an in-browser YAML editor. Clone is the fastest way to spin up a new actor from an existing one.
+- **Every save is validated first** (unknown fields with "did you mean?", invalid attack strings, missing/typed fields, attribution/ATT&CK checks) — invalid configs are rejected with inline errors and never written. Filenames are sanitized and writes are confined to the config directories.
 
 #### Manage Users (`/admin/users`)
 - View all users with their role, team, and score
@@ -139,6 +149,7 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Import challenges in bulk via CSV upload
 - Global challenges (no round assigned) appear to all players; round-scoped challenges appear only to that round's participants
 - **Answer Tester** 🆕 — an inline form to preview how an answer grades (with normalization / defang) before publishing a challenge
+- **Auto-generate** 🆕 (`/admin/generate_challenges`) — build a challenge set straight from the scenario's ground truth (malicious IPs, domains, phishing senders, malware families/hashes, attribution + aliases, and MITRE ATT&CK technique IDs). "Preview auto-gen" shows the proposed Q&A; "Auto-generate" creates the non-duplicate ones. Run it after generating a game, since most facts only exist once the data has been produced.
 
 #### Scenario PDF Export (`/admin/export/scenario_pdf`) 🆕
 - One-click export of the scenario as a polished PDF, generated from the live game data (company profile, the actors in play with their ATT&CK techniques, and the challenge set) — so it never drifts out of sync.
@@ -290,6 +301,7 @@ New tables are created automatically on game start (registered in `LogUploader.C
 - Set `KC7_SECRET_KEY` to a fixed value in production so sessions survive app restarts
 - Set `KC7_SECURITY_SALT` to a long random string in production
 - ADX client secrets entered via the GUI are stored in the local SQLite database
+- **Real-world intel safety** 🆕 — `ALLOW_REAL_INDICATORS` and `ALLOW_REAL_C2_INFRASTRUCTURE` (in `config.py`) are **off by default**. Keep them off unless your indicators are inert (synthetic, sinkholed, or defanged) — never live C2 a player could reach or blocklist. Seed "malware" files only ever contain the harmless EICAR test string (enforced via `app/server/modules/safety/safety.py`); real malware hashes are used as indicator strings only, never as payloads. A `defang()` helper renders real IOCs inertly for display.
 
 ---
 # Deprecated

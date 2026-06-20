@@ -215,14 +215,25 @@ def game_status():
         except Exception:
             pass
 
+    # live per-table ingested-row counts from the active uploader (#28)
+    table_counts = {}
+    try:
+        from app.server.game_functions import LOG_UPLOADER
+        table_counts = dict(LOG_UPLOADER.row_counts)
+    except Exception:
+        table_counts = {}
+
     return jsonify({
         "running":      GAME_PROGRESS.get("running", False),
         "complete":     GAME_PROGRESS.get("complete", False),
+        "cancelled":    GAME_PROGRESS.get("cancelled", False),
         "current_date": GAME_PROGRESS.get("current_date"),
         "start_date":   GAME_PROGRESS.get("start_date"),
         "end_date":     GAME_PROGRESS.get("end_date"),
         "error":        GAME_PROGRESS.get("error"),
         "progress_pct": progress_pct,
+        "log":          GAME_PROGRESS.get("log", [])[-15:],
+        "table_counts": table_counts,
     })
 
 
@@ -231,6 +242,9 @@ def game_status():
 @login_required
 def stop_game():
     print("Stopping the game")
+    # Ask a running generation loop to halt at the next day boundary (#28)
+    from app.server.game_functions import GAME_PROGRESS
+    GAME_PROGRESS["cancel_requested"] = True
     current_session = db.session.get(GameSession, 1)
     current_session.state = False
     db.session.commit()
@@ -856,10 +870,22 @@ def submit_answer():
                            message="Incorrect answer. Try again!")
 
         # Correct and first solve -- award points
+        # Optional dynamic / first-blood scoring (off by default): value decays as more
+        # teams solve a challenge, and the first solver earns a bonus. When disabled,
+        # the existing time-weighted scoring is used unchanged.
         # Round challenges: score based on how early within the round window.
         # Global challenges: score based on global session elapsed time.
         now = datetime.now()
-        if challenge.round_id:
+        if current_app.config.get("DYNAMIC_SCORING_ENABLED"):
+            from app.server.modules.scoring.dynamic_scoring import award_for_solve
+            prior_solves = Solve.query.filter_by(challenge_id=challenge_id).count()
+            points_earned = award_for_solve(
+                challenge.value, prior_solves,
+                minimum=current_app.config.get("DYNAMIC_SCORING_MINIMUM", 50),
+                decay=current_app.config.get("DYNAMIC_SCORING_DECAY", 20),
+                first_blood_pct=current_app.config.get("FIRST_BLOOD_BONUS_PCT", 0),
+            )["total"]
+        elif challenge.round_id:
             _rnd_for_score = db.session.get(GameRound, challenge.round_id)
             points_earned = calculate_round_time_weighted_points(
                 challenge.value, _rnd_for_score, solved_at=now
@@ -1791,6 +1817,188 @@ def score_audit():
     if request.args.get("format") == "json":
         return jsonify(report)
     return Response(format_reconciliation_text(report), mimetype="text/plain")
+
+
+@main.route("/admin/run_history")
+@roles_required("Admin")
+@login_required
+def run_history():
+    """
+    Generation run history: when each game was generated, how long it took, whether it
+    succeeded, and the scenario window. ?format=json for the raw data.
+    """
+    from flask import Response
+    from app.server.models import GameRunLog
+
+    def _counts(raw):
+        try:
+            return json.loads(raw) if raw else {}
+        except Exception:
+            return {}
+
+    runs = GameRunLog.query.order_by(GameRunLog.id.desc()).limit(50).all()
+    data = [{
+        "id": r.id,
+        "started_at": r.started_at.strftime("%Y-%m-%d %H:%M:%S") if r.started_at else None,
+        "finished_at": r.finished_at.strftime("%Y-%m-%d %H:%M:%S") if r.finished_at else None,
+        "duration_seconds": r.duration_seconds,
+        "status": r.status,
+        "game_start_date": r.game_start_date,
+        "game_end_date": r.game_end_date,
+        "days_generated": r.days_generated,
+        "table_counts": _counts(r.table_counts),
+        "error": r.error,
+    } for r in runs]
+
+    if request.args.get("format") == "json":
+        return jsonify(runs=data)
+
+    lines = ["GENERATION RUN HISTORY (most recent first)", "=" * 78]
+    if not data:
+        lines.append("(no runs recorded yet)")
+    for d in data:
+        dur = (str(d["duration_seconds"]) + "s") if d["duration_seconds"] is not None else "—"
+        window = "%s..%s" % (d["game_start_date"] or "?", d["game_end_date"] or "?")
+        total_rows = sum(d["table_counts"].values()) if d["table_counts"] else 0
+        lines.append("#%-4s %-19s %-9s window=%-24s days=%-4s dur=%-7s rows=%s"
+                     % (d["id"], d["started_at"] or "?", d["status"], window,
+                        d["days_generated"] if d["days_generated"] is not None else "—",
+                        dur, "{:,}".format(total_rows) if total_rows else "—"))
+        if d["table_counts"]:
+            per = ", ".join("%s=%s" % (t, c) for t, c in sorted(d["table_counts"].items()))
+            lines.append("       tables: " + per)
+        if d["error"]:
+            lines.append("       error: " + d["error"])
+    return Response("\n".join(lines), mimetype="text/plain")
+
+
+# ---------------------------------------------------------------------------
+# Manage Scenario — author actor / malware configs from the UI (#3)
+# ---------------------------------------------------------------------------
+
+def _scenario_starter(kind):
+    if kind == "malware":
+        return ("name: newmalware\n"
+                "filenames:\n  - example.exe\n"
+                "paths:\n  - C:\\ProgramData\\\n"
+                "recon_processes:\n  - name: cmd.exe\n    process: cmd.exe /c whoami\n"
+                "c2_processes:\n  - name: rundll32.exe\n    process: rundll32.exe {ip_address}:443\n")
+    return ("name: NewActor\n"
+            "activity_start_date: \"2023-03-01\"\n"
+            "activity_end_date: \"2023-03-15\"\n"
+            "activity_start_hour: 9\n"
+            "workday_length_hours: 8\n"
+            "attacks:\n  - email:phishing\n")
+
+
+@main.route("/admin/manage_scenario")
+@roles_required("Admin")
+@login_required
+def manage_scenario():
+    """List actor/malware configs and edit/clone them in an in-browser YAML editor."""
+    from app.server.modules.scenario_admin import scenario_admin as sa
+    files = sa.list_files()
+
+    kind = request.args.get("kind") or "actor"
+    name = request.args.get("name")
+    is_clone = request.args.get("clone") == "1"
+    editor = {"kind": "actor", "name": "", "content": _scenario_starter("actor")}
+
+    if name:
+        try:
+            content = sa.clone_content(kind, name) if is_clone else sa.read_file(kind, name)
+            editor = {"kind": kind, "name": ("" if is_clone else name), "content": content}
+        except Exception as e:
+            flash("Could not load %s: %s" % (name, e), "error")
+    elif kind in ("actor", "malware") and request.args.get("new") == "1":
+        editor = {"kind": kind, "name": "", "content": _scenario_starter(kind)}
+
+    return render_template("admin/manage_scenario.html", files=files, editor=editor, errors=[])
+
+
+@main.route("/admin/scenario/save", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def scenario_save():
+    from app.server.modules.scenario_admin import scenario_admin as sa
+    kind = request.form.get("kind", "actor")
+    name = (request.form.get("name") or "").strip()
+    content = request.form.get("content", "")
+
+    errors = ["Please provide a file name."] if not name else sa.save_file(kind, name, content)
+    if errors:
+        return render_template("admin/manage_scenario.html",
+                               files=sa.list_files(),
+                               editor={"kind": kind, "name": name, "content": content},
+                               errors=errors)
+
+    flash("Saved %s config '%s'." % (kind, name), "success")
+    return redirect(url_for("main.manage_scenario", kind=kind,
+                            name=name if name.endswith(".yaml") else name + ".yaml"))
+
+
+@main.route("/admin/scenario/delete", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def scenario_delete():
+    from app.server.modules.scenario_admin import scenario_admin as sa
+    kind = request.form.get("kind", "actor")
+    name = request.form.get("name", "")
+    try:
+        if sa.delete_file(kind, name):
+            flash("Deleted %s." % name, "success")
+        else:
+            flash("%s not found." % name, "error")
+    except Exception as e:
+        flash("Delete failed: %s" % e, "error")
+    return redirect(url_for("main.manage_scenario"))
+
+
+@main.route("/admin/generate_challenges", methods=["GET", "POST"])
+@roles_required("Admin")
+@login_required
+def generate_challenges():
+    """
+    Auto-generate challenges from the scenario's ground truth (#11): malicious IPs,
+    domains, sender addresses, malware families/hashes, attribution, and ATT&CK ids.
+    GET previews (text, or ?format=json); POST creates the non-duplicate ones.
+    Best run after a game has generated (most facts only exist post-generation).
+    """
+    from flask import Response
+    from app.server.modules.challenge_gen.challenge_generator import (
+        gather_scenario_facts, build_challenges,
+    )
+
+    actors, malware_by_name = gather_scenario_facts()
+    proposed = build_challenges(actors, malware_by_name=malware_by_name)
+
+    if request.method == "GET":
+        if request.args.get("format") == "json":
+            return jsonify(count=len(proposed), challenges=proposed)
+        lines = ["AUTO-GENERATED CHALLENGES — preview (%d proposed)" % len(proposed), "=" * 72,
+                 "Use the 'Auto-generate' button on Manage Challenges (or POST here) to create them.",
+                 "Already-existing challenge names are skipped on create.", ""]
+        for c in proposed:
+            lines.append("[%3d] %-18s %s" % (c["value"], c["category"], c["name"]))
+            lines.append("        Q: " + c["description"])
+            lines.append("        A: " + (c["answer"][:120] + ("…" if len(c["answer"]) > 120 else "")))
+        if not proposed:
+            lines.append("(no facts available yet — run a game first so the ground truth exists)")
+        return Response("\n".join(lines), mimetype="text/plain")
+
+    # POST — create the non-duplicate challenges
+    existing = {c.name for c in Challenge.query.all()}
+    added = 0
+    for c in proposed:
+        if c["name"] in existing:
+            continue
+        db.session.add(Challenge(name=c["name"], category=c["category"],
+                                 description=c["description"], answer=c["answer"], value=c["value"]))
+        added += 1
+    db.session.commit()
+    flash("Auto-generated %d challenge(s) from the scenario ground truth (%d already existed)."
+          % (added, len(proposed) - added), "success")
+    return redirect(url_for("main.manage_challenges"))
 
 
 # ---------------------------------------------------------------------------

@@ -318,6 +318,36 @@ class MitigationAward(AuthBase):
         return '<MitigationAward user=%r indicator=%r>' % (self.user_id, self.indicator)
 
 
+class GameRunLog(AuthBase):
+    """
+    A record of each data-generation run, for facilitator observability — when a game
+    was generated, how long it took, whether it succeeded, and the scenario window.
+    """
+    __tablename__ = "game_run_logs"
+
+    started_at      = db.Column(db.DateTime, nullable=False)
+    finished_at     = db.Column(db.DateTime, nullable=True)
+    status          = db.Column(db.String(20), nullable=False, default="running")  # running|complete|error
+    error           = db.Column(db.String(500), nullable=True)
+    game_start_date = db.Column(db.String(50), nullable=True)
+    game_end_date   = db.Column(db.String(50), nullable=True)
+    days_generated  = db.Column(db.Integer, nullable=True)
+    table_counts    = db.Column(db.Text, nullable=True)  # JSON: {table: rows_ingested}
+
+    def __init__(self, status="running"):
+        self.started_at = datetime.datetime.now()
+        self.status = status
+
+    @property
+    def duration_seconds(self):
+        if self.finished_at and self.started_at:
+            return int((self.finished_at - self.started_at).total_seconds())
+        return None
+
+    def __repr__(self):
+        return '<GameRunLog %r %r>' % (self.started_at, self.status)
+
+
 
 ##########################################################
 # Live answer attempt log (all submissions, right or wrong)

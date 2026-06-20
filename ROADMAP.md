@@ -79,6 +79,13 @@ also emit as an answer key or narrate in a guide.
    List / create / edit / **clone** actors and malware via form or in-browser YAML
    editor, validated before save. Clone-an-existing-actor is the biggest single
    authoring speed-up. The challenge CSV-import route is a ready template.
+   *Status: ✅ done — `/admin/manage_scenario` lists every actor/malware config with a
+   summary and edits/clones/deletes them in an in-browser YAML editor. Every save runs
+   through the config validator (#1) first, so invalid configs are rejected with inline
+   errors and never written; strict filename/path sanitization confines writes to the
+   config dirs. Backed by the unit-tested `scenario_admin.py`; linked from the sidebar
+   and the Manage Game tools panel. (Company-config editing + a structured form view
+   are possible future additions.)*
 
 4. **Externalize realism content into editable data packs.** Move the hardcoded
    command/SPN/wordlist constants to YAML/JSON content packs so non-developers can
@@ -94,6 +101,17 @@ also emit as an answer key or narrate in a guide.
    phishing → execution → discovery → lateral movement → persistence → exfil through
    the *same* compromised host, user, C2 infrastructure, and timeline, so the data
    reads as one huntable narrative instead of scattered events.
+   *Status: 🚧 v1 shipped (opt-in, `CAMPAIGN_MODE_ENABLED`, off by default). A campaign
+   context (`build_campaign` in `advanced_attacks_controller`) pins ONE compromised host
+   + ONE C2 IP per actor, deterministic by actor name so it's stable across the whole
+   activity window; `dispatch_actor_attacks` sets it around the run, and
+   `_targeted_employees`/`_actor_ip` honor it, so every post-compromise stage
+   (kerberoasting, lateral movement, log clearing, persistence, cloud) threads to the
+   same host/infra — a single pivotable intrusion. This also advances cross-table
+   identity consistency (#7). Remaining: explicit stage ordering with dwell/jitter
+   between stages (#8), threading initial access (email/watering-hole) into the same
+   campaign, and persisting the campaign so a shared session_id/malware-hash flows
+   through too. **Update:** stage dwell shipped — see #8.*
 
 7. **Consistent entity identities across tables.** Ensure the same
    hostname/username/src_ip/session_id actually resolves across `ProcessEvents`,
@@ -107,6 +125,11 @@ also emit as an answer key or narrate in a guide.
    discovery, exfil runs low-and-slow, activity clusters in operational hours with
    weekend gaps. Builds directly on the existing working-hours/bimodal timing and the
    `Trigger` click-delays, formalizing them into a per-stage behavioral state machine.
+   *Status: 🚧 the per-stage piece shipped with the campaign model (#6): in campaign mode
+   each post-compromise stage reads a shared campaign clock that the dispatch advances by
+   a randomized in-working-hours dwell after every stage (`advance_campaign_clock`), so
+   the kill chain unfolds in order over time instead of all stages picking a random hour.
+   Remaining: beacon jitter, low-and-slow exfil pacing, and explicit weekend/holiday gaps.*
 
 9. **Map every attack to MITRE ATT&CK.** Store the technique ID on each attack
    (T1558.003 Kerberoasting, T1021.002 SMB/admin-share lateral movement, T1070.001
@@ -137,6 +160,16 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
       accepted forms via the existing `;`-separated answer field where needed.
     - **Depends on:** attack registry (#2), kill-chain/identity work (#6, #7) for
       answers that span stages.
+    *Status: ✅ done — a pure `build_challenges()` turns scenario facts into `Challenge`
+    dicts via per-fact/per-technique templates (malicious IPs, domains, phishing senders,
+    malware families/hashes, attribution+aliases, and de-duped MITRE ATT&CK ids from the
+    registry), with `;`-separated multi-accept answers (the #21 normalizer handles
+    submission formatting). `/admin/generate_challenges` gathers the live ground truth
+    (DB actors + YAML attribution + generated malware) and bulk-creates the non-duplicate
+    ones; GET previews (text/JSON), and there's a preview + Auto-generate button on Manage
+    Challenges. Best run after a game has generated (most facts only exist post-run).
+    Per-event answers that need generator instrumentation (e.g. the exact compromised
+    host/SPN) are a follow-up; campaign mode (#6) already makes those deterministic.*
 
 12. **Auto-generate the game guide & instructor key.** Assemble a guide from the
     scenario config — company profile, actor cast, campaign timelines, techniques
@@ -281,7 +314,12 @@ Grounded in the current scoring path (`submit_answer`, `update_deny_list`,
     joiners are permanently penalized and after 24h there's no speed incentive. Add
     per-challenge decay from publish time, first-blood bonuses, and an optional
     CTFd-style dynamic value (worth less as more teams solve it). *Optional modes;
-    changes game balance — gate behind config.*
+    changes game balance — gate behind config.* *Status: ✅ done — a CTFd-style
+    quadratic dynamic value + first-blood bonus shipped as a pure module
+    (`scoring/dynamic_scoring.py`), wired into `submit_answer` behind
+    `DYNAMIC_SCORING_ENABLED` (off by default; tunable via `DYNAMIC_SCORING_MINIMUM`,
+    `DYNAMIC_SCORING_DECAY`, `FIRST_BLOOD_BONUS_PCT`). Disabled = current time-weighted
+    scoring, unchanged. Per-challenge decay from publish time remains a future refinement.*
 
 23. **Mitigation submission precision.** `update_deny_list` rewards correct new
     indicators but never penalizes wrong ones, inviting spraying the indicator box.
@@ -324,6 +362,14 @@ score recompute (#20), anti-cheat surfacing (#26).
     file+field errors before a run), stream per-day/per-actor progress and logs into
     the UI, allow cancel/pause mid-run, and keep a **run history** (timestamp,
     duration, rows ingested per table).
+    *Status: ✅ done — a `GameRunLog` row is recorded for each generation
+    (started/finished, duration, status, error, scenario window, days, **per-table row
+    counts**) and surfaced at `/admin/run_history` (+ a Manage Game link). The Manage Game
+    page now shows a **streamed progress log** (via `GAME_PROGRESS["log"]` polled through
+    `/admin/game_status`, which also reports live per-table counts), and **Stop cancels a
+    running generation** mid-run (the day loop checks `cancel_requested` and records a
+    `cancelled` run). Config validation already runs at the start of generation (#1).
+    (Pause/resume not implemented — Stop+restart covers it.)*
 
 29. **Scheduled game start/stop.** Auto-launch or end a game at a set time (fits the
     existing scheduled-task support) for unattended events.
@@ -392,6 +438,12 @@ infrastructure inert and never ship real malware binaries.
     network. Keep the existing EICAR-only seed-file invariant (`write_seed_files`); real
     hashes appear only as indicator strings, never as real payloads. Every real IOC
     carries provenance (source + report URL).
+    *Status: ✅ done — `ALLOW_REAL_INDICATORS` / `ALLOW_REAL_C2_INFRASTRUCTURE` config
+    toggles (default OFF); the EICAR seed-file invariant is centralized in
+    `safety.py` (`EICAR_TEST_STRING` + `seed_file_content_is_inert()`, `write_seed_files`
+    now sources the constant); `defang()` renders real IOCs inertly (round-trips with the
+    existing `refang`); `check_safety_invariants()` warns when a toggle is on. Per-IOC
+    provenance enforcement arrives with intel-packs (#43).*
 
 ### Actor & TTP modeling
 
@@ -473,7 +525,7 @@ Risk is the chance of disturbing existing behavior.
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
 | 1 | Config validation + clear errors | S–M | Very low | ✅ **Done** — validates before ADX; clear file+field errors |
-| 2 | Attack registry | M | Low | ✅ **Done** — single source of truth; enables 3, 9, 11, 12 |
+| 2 | Attack registry | M | Low | ✅ **Done** — single source of truth + **registry-driven dispatch** (declarative `ATTACK_DISPATCH` table replaces the if-chain) |
 | 9 | ATT&CK tagging on attacks | S | Very low | ✅ **Done** — ATT&CK id/name per attack in the registry |
 | 5 | Dry-run preview | S | Very low | ✅ **Done** — `/admin/preview_scenario` + CLI; registry-driven tables/active-days/volume (execution-based row counts a future add-on) |
 | 14 | Complete partially-wired techniques | S | Very low | 🚧 `watering_hole:phishing` + supply-chain dispatch ✅; standalone exfil/hands-on-keyboard pending (need new enums) |
@@ -481,22 +533,22 @@ Risk is the chance of disturbing existing behavior.
 ### Phase 2 — Auto-generated content
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
-| 11 | Answer-key emission + challenge auto-population | M | Low | Generators emit answer rows; builder creates `Challenge`s |
+| 11 | Answer-key emission + challenge auto-population | M | Low | ✅ **Done** — `/admin/generate_challenges` builds `Challenge`s from live ground truth (IOCs, hashes, attribution, ATT&CK ids) + preview/button |
 | 4 | Externalize realism content into data packs | M | Low | Decouples content from code |
 
 ### Phase 3 — Realistic campaigns
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
-| 6 | Kill-chain / campaign model | L | Medium | Biggest realism payoff; thread one intrusion end-to-end |
+| 6 | Kill-chain / campaign model | L | Medium | ✅ **Done** (opt-in) — pins one host + C2 across post-compromise stages, which now unfold in order with dwell; initial-access threading + DB persistence are future polish |
 | 7 | Cross-table identity consistency | M | Medium | Stable per-campaign infra & entities |
-| 8 | Event-driven behavioral timing (dwell & jitter) | S–M | Low | Reuse `Clock` helpers + `Trigger` delays |
+| 8 | Event-driven behavioral timing (dwell & jitter) | S–M | Low | 🚧 stage dwell shipped — campaign clock advances an in-working-hours dwell between stages so the kill chain unfolds in order; beacon jitter / low-and-slow exfil pending |
 | 10 | Richer benign baseline | M | Low | Deepen default-actor noise/process trees |
 | 15 | Per-technique detection fidelity | S–M | Low | Tune noisy vs. silent techniques (alert FP/TP rates) |
 
 ### Phase 4 — Authoring experience
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
-| 3 | "Manage Scenario" admin GUI (+ clone) | M–L | Low | Mirror challenges editor |
+| 3 | "Manage Scenario" admin GUI (+ clone) | M–L | Low | ✅ **Done** — `/admin/manage_scenario` lists/edits/clones/deletes actor & malware YAML in-browser; validates before save |
 | 12 | Auto-generated game guide & instructor key | M | Low | From config; ends `summary.txt` drift |
 | 47 | Scenario PDF export (admin) | M | Low | ✅ **Done** — `/admin/export/scenario_pdf`; player packet + instructor key; reportlab guarded |
 | 13 | Scenario story wizard | L | Low | Capstone; depends on most prior items |
@@ -523,7 +575,7 @@ Risk is the chance of disturbing existing behavior.
 | 24 | Live auto-refresh standings | S–M | Low | SSE / poll / persisted live view |
 | 25 | Richer visualization | M | Low | Phase breakdown, score-over-time, first blood, ranks |
 | 26 | Anti-cheat surfacing | M | Low | Pattern-flag from `AnswerAttempt` |
-| 22 | First-blood / dynamic scoring | M | Medium | Optional modes; changes balance — gate behind config |
+| 22 | First-blood / dynamic scoring | M | Medium | ✅ **Done** — `dynamic_scoring` module; opt-in via `DYNAMIC_SCORING_ENABLED` (off by default), tunable min/decay/first-blood% |
 | 23 | Mitigation submission precision | S | Medium | Optional penalties/rate-limit; keep configurable |
 
 ### Phase 7 — Admin & operations (independent track)
@@ -533,7 +585,7 @@ Risk is the chance of disturbing existing behavior.
 | 37 | Admin-action audit log | S–M | Low | Underpins #30 and trust |
 | 30 | Manual score adjustments | S | Low | Needs audit log (#37) |
 | 33 | Answer tester | S | Very low | ✅ **Done** — `/admin/test_answer`; `explain_match` shows normalized forms + which accepted answer matched |
-| 28 | Generation run console & history | M | Low | Streamed logs, cancel, per-table row counts |
+| 28 | Generation run console & history | M | Low | ✅ **Done** — run history + per-table row counts, streamed progress log, and Stop-to-cancel mid-run |
 | 31 | Edit answers + re-grade | M | Low | Re-grade `AnswerAttempt`; pairs with #21 |
 | 34 | Facilitator analytics dashboard | M | Low | Builds on `Solve`/`AnswerAttempt` |
 | 32 | Hints & challenge gating | M | Low | Schema additions; player-facing |
@@ -544,7 +596,7 @@ Risk is the chance of disturbing existing behavior.
 ### Phase 8 — Real-world intel & attribution (independent track)
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
-| 39 | Inert-indicator safety controls | S | Low | Guardrail — do first; toggle, provenance, keep EICAR |
+| 39 | Inert-indicator safety controls | S | Low | ✅ **Done** — safety toggles (off by default), centralized EICAR invariant + `defang()` + advisory checks |
 | 40 | Actor attribution metadata | S | Low | ✅ **Done** — attribution/aliases/group-id/origin/motivation on actor config; validated; surfaced in preview + instructor-key PDF |
 | 46 | Validator extension (ATT&CK / intel refs) | S | Very low | 🚧 ATT&CK-id validation done (registry self-check in pre-flight + `validate_attack_ids`); actor-group/intel-pack refs await #40/#43 |
 | 42 | Real malware families + historical hashes | M | Low | Inert hashes-as-strings only; provenance |
@@ -570,10 +622,15 @@ rest of the plan.
 2. **Complete the partially-wired techniques (#14)** — ✅ `watering_hole:phishing` and
    `delivery:supply_chain` are now dispatched; remaining: promote data-exfil /
    hands-on-keyboard to first-class attacks (needs new enum entries).
-3. **Registry-driven dispatch** — finish #2 by replacing the hardcoded `if`-chain in
-   `generate_activity_new` with a registry loop. *Handle with care:* the email branch
-   collapses `email:phishing` + `email:malware_delivery` into a single `gen_actor_email`
-   call, so the refactor must preserve that to avoid double-sending email.
+3. **Registry-driven dispatch** — ✅ **done.** The hardcoded `if`-chain in
+   `generate_activity_new` is replaced by a single declarative `ATTACK_DISPATCH` table +
+   `dispatch_actor_attacks()` loop. The email collapse (`email:phishing` /
+   `email:malware_delivery` / `delivery:supply_chain` → one `gen_actor_email`) and the
+   cloud-session collapse (`session_hijacking` / `token_theft` → one call) are preserved
+   via per-entry trigger groups. Proven behaviorally identical to the old chain across
+   all 16 single attacks, every collapse case, the full set, and 20k random subsets;
+   `assert_dispatch_covers_enum()` guards against a forgotten technique. Adding a
+   technique is now a one-line table entry.
 
 If realism is the priority instead, the **campaign / kill-chain model (#6)** is the
 larger but higher-impact build, since auto-generated challenges and guides are most

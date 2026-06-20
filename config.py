@@ -72,6 +72,30 @@ class ProductionConfig(BaseConfig):
     DEBUG = False
     #SQLALCHEMY_DATABASE_URI = os.environ['DATABASE_URL_HERE']
 
+    # --- Optional dynamic / first-blood scoring (off by default) ---
+    # When enabled, a challenge's value decays as more teams solve it (CTFd-style) and
+    # the first solver earns a bonus. When disabled, the existing time-weighted scoring
+    # is used unchanged, so leaving these as-is preserves current behavior.
+    DYNAMIC_SCORING_ENABLED = False
+    DYNAMIC_SCORING_MINIMUM = 50      # floor a challenge's value decays toward
+    DYNAMIC_SCORING_DECAY = 20        # number of solves after which the floor is reached
+    FIRST_BLOOD_BONUS_PCT = 0         # percent bonus for the first solver (0 = no bonus)
+
+    # --- Real-world intel safety toggles (default OFF) ---
+    # Guardrails for using real threat-intel in scenarios. Keep these OFF unless you
+    # have ensured indicators are inert: synthetic, sinkholed, or defanged — never live
+    # C2 a player could reach, and real malware hashes only as strings (seed files stay
+    # EICAR). See app/server/modules/safety/safety.py.
+    ALLOW_REAL_INDICATORS = False
+    ALLOW_REAL_C2_INFRASTRUCTURE = False
+
+    # --- Campaign / kill-chain mode (off by default) ---
+    # When enabled, an actor's post-compromise stages (kerberoasting, lateral movement,
+    # log clearing, persistence, cloud) thread through ONE pinned compromised host and
+    # C2 IP per actor, turning scattered events into a single huntable intrusion. When
+    # disabled, each technique picks its own victim/IP as before.
+    CAMPAIGN_MODE_ENABLED = False
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7

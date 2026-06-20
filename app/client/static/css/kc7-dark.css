@@ -109,6 +109,13 @@ body.theme-cyber .table-hover tbody tr:hover {
   background-color: rgba(34, 211, 238, 0.07);
   color: var(--cy-head);
 }
+/* contextual rows (e.g. live feed incorrect=table-danger) tinted for dark surfaces */
+body.theme-cyber .table .table-danger,
+body.theme-cyber .table-danger > td,
+body.theme-cyber tr.table-danger { background-color: rgba(226, 75, 74, 0.13) !important; color: #f0a8a8; }
+body.theme-cyber .table .table-success,
+body.theme-cyber .table-success > td,
+body.theme-cyber tr.table-success { background-color: rgba(52, 211, 153, 0.13) !important; color: #a7e8cd; }
 
 /* ---- forms ---- */
 body.theme-cyber .form-control {

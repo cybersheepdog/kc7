@@ -43,6 +43,78 @@ fake = Faker()
 
 
 # ---------------------------------------------------------------------------
+# Campaign context (#6)
+# Pins ONE compromised host (employee) and ONE C2 IP for an actor's post-compromise
+# stages so kerberoasting -> lateral movement -> evasion -> persistence -> cloud all
+# thread to the same host/infrastructure — a single huntable intrusion instead of
+# scattered events. Inert unless a campaign is set active (campaign mode is off by
+# default); when inactive, the helpers below behave exactly as before.
+# ---------------------------------------------------------------------------
+_ACTIVE_CAMPAIGN = None
+
+
+def set_active_campaign(campaign):
+    global _ACTIVE_CAMPAIGN
+    _ACTIVE_CAMPAIGN = campaign
+
+
+def clear_active_campaign():
+    global _ACTIVE_CAMPAIGN
+    _ACTIVE_CAMPAIGN = None
+
+
+def build_campaign(actor):
+    """
+    Pin a single compromised host and C2 IP for this actor. Deterministic per actor
+    (derived from the actor name) so the same host/C2 thread across every day of the
+    activity window into one multi-day intrusion. Returns a dict.
+    """
+    import hashlib
+    import uuid
+    candidates = get_employees(roles_list=actor.watering_hole_target_roles_list)
+    host = None
+    if candidates:
+        candidates = sorted(candidates, key=lambda e: getattr(e, "username", "") or "")
+        idx = int(hashlib.md5(actor.name.encode("utf-8")).hexdigest(), 16) % len(candidates)
+        host = candidates[idx]
+    ip_list = sorted(getattr(actor, "ips_list", []) or [])
+    if ip_list:
+        idx2 = int(hashlib.md5((actor.name + "c2").encode("utf-8")).hexdigest(), 16) % len(ip_list)
+        c2_ip = ip_list[idx2]
+    else:
+        c2_ip = fake.ipv4_public()
+    return {"host": host, "c2_ip": c2_ip, "session_id": str(uuid.uuid4()), "clock": None}
+
+
+def init_campaign_clock(actor, start_date):
+    """Start the active campaign's clock at the day's base time (call once per day)."""
+    camp = _ACTIVE_CAMPAIGN
+    if camp is not None:
+        camp["clock"] = Clock.generate_bimodal_timestamp(
+            start_date=start_date,
+            start_hour=actor.activity_start_hour,
+            day_length=actor.workday_length_hours,
+        ).timestamp()
+
+
+def advance_campaign_clock(actor):
+    """
+    Advance the active campaign's clock by a randomized in-working-hours dwell so each
+    kill-chain stage occurs *after* the previous one — event-driven timing (#8) that
+    makes the intrusion unfold over time instead of all-at-once.
+    """
+    camp = _ACTIVE_CAMPAIGN
+    if camp is not None and camp.get("clock") is not None:
+        camp["clock"] = Clock.delay_time_in_working_hours(
+            start_time=camp["clock"],
+            factor="hours",
+            workday_start_hour=actor.activity_start_hour,
+            workday_length_hours=actor.workday_length_hours,
+            working_days_of_week=actor.working_days_list,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Generic upload helpers
 # ---------------------------------------------------------------------------
 def _upload(event, table_name: str) -> None:
@@ -55,12 +127,25 @@ def _targeted_employees(actor: Actor, count: int) -> "list[Employee]":
     """
     Pick employees for the actor to operate against.
     Uses the actor's watering_hole_target_roles if defined, otherwise any employee.
+    When a campaign is active, the pinned compromised host is returned so every
+    post-compromise stage operates against the same victim (#6).
     """
     roles = actor.watering_hole_target_roles_list
+    camp = _ACTIVE_CAMPAIGN
+    if camp is not None and camp.get("host") is not None:
+        host = camp["host"]
+        if count <= 1:
+            return [host]
+        return [host] + list(get_employees(roles_list=roles, count=count - 1))
     return get_employees(roles_list=roles, count=count)
 
 
 def _base_time(actor: Actor, start_date: date) -> float:
+    # In a campaign, stages share the campaign clock (which the dispatch advances with
+    # dwell between stages), so the kill chain unfolds in order over time (#6/#8).
+    camp = _ACTIVE_CAMPAIGN
+    if camp is not None and camp.get("clock") is not None:
+        return camp["clock"]
     return Clock.generate_bimodal_timestamp(
         start_date=start_date,
         start_hour=actor.activity_start_hour,
@@ -79,6 +164,10 @@ def _working_hours_delay(actor: Actor, time: float, factor: str = "hours") -> fl
 
 
 def _actor_ip(actor: Actor) -> str:
+    # When a campaign is active, reuse its pinned C2 IP so all stages share infra (#6).
+    camp = _ACTIVE_CAMPAIGN
+    if camp is not None and camp.get("c2_ip"):
+        return camp["c2_ip"]
     ips = actor.get_ips(count_of_ips=1)
     if ips:
         return ips[0]

@@ -1,0 +1,101 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-drafting-compass text-primary mr-2"></i>Manage Scenario</h1>
+  </div>
+
+  {% if errors %}
+  <div class="alert alert-danger">
+    <b>Could not save — fix these and try again:</b>
+    <ul class="mb-0 mt-1">
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="row">
+
+    <!-- File list -->
+    <div class="col-lg-5">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+          <h6 class="m-0 font-weight-bold text-primary">Scenario Files</h6>
+          <div>
+            <a href="{{ url_for('main.manage_scenario', kind='actor', new=1) }}" class="btn btn-sm btn-primary"><i class="fas fa-plus mr-1"></i>Actor</a>
+            <a href="{{ url_for('main.manage_scenario', kind='malware', new=1) }}" class="btn btn-sm btn-secondary"><i class="fas fa-plus mr-1"></i>Malware</a>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="thead-light">
+              <tr><th>Type</th><th>Name</th><th>Summary</th><th class="text-right">Actions</th></tr>
+            </thead>
+            <tbody>
+              {% for f in files %}
+              <tr>
+                <td><span class="badge badge-{{ 'info' if f.kind == 'actor' else 'secondary' }}">{{ f.kind }}</span></td>
+                <td><strong>{{ f.name }}</strong></td>
+                <td class="small text-muted">{{ f.summary }}</td>
+                <td class="text-right text-nowrap">
+                  <a class="btn btn-sm btn-outline-primary" title="Edit"
+                     href="{{ url_for('main.manage_scenario', kind=f.kind, name=f.name) }}"><i class="fas fa-edit"></i></a>
+                  <a class="btn btn-sm btn-outline-secondary" title="Clone"
+                     href="{{ url_for('main.manage_scenario', kind=f.kind, name=f.name, clone=1) }}"><i class="fas fa-copy"></i></a>
+                  <form method="post" action="{{ url_for('main.scenario_delete') }}" style="display:inline"
+                        onsubmit="return confirm('Delete {{ f.name }}?');">
+                    <input type="hidden" name="kind" value="{{ f.kind }}">
+                    <input type="hidden" name="name" value="{{ f.name }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit" title="Delete"><i class="fas fa-trash"></i></button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center text-muted py-4">No scenario files yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Editor -->
+    <div class="col-lg-7">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Editor</h6>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small">
+            Edit the raw YAML below. It's <b>validated before saving</b> — invalid configs are rejected
+            with errors and never written. Use <b>Clone</b> on a file to start from an existing actor.
+          </p>
+          <form method="post" action="{{ url_for('main.scenario_save') }}">
+            <div class="form-row">
+              <div class="form-group col-md-4">
+                <label class="small font-weight-bold mb-1">Type</label>
+                <select name="kind" class="form-control">
+                  <option value="actor" {{ 'selected' if editor.kind == 'actor' else '' }}>actor</option>
+                  <option value="malware" {{ 'selected' if editor.kind == 'malware' else '' }}>malware</option>
+                </select>
+              </div>
+              <div class="form-group col-md-8">
+                <label class="small font-weight-bold mb-1">File name</label>
+                <input type="text" name="name" class="form-control" value="{{ editor.name }}"
+                       placeholder="e.g. BluePhoenix.yaml" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="small font-weight-bold mb-1">YAML</label>
+              <textarea name="content" class="form-control text-monospace" rows="20" spellcheck="false"
+                        style="font-size:.85rem;">{{ editor.content }}</textarea>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> Validate &amp; Save</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+{% endblock %}

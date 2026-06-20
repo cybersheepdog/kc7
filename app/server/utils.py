@@ -187,7 +187,10 @@ def get_email_prefix() -> str:
     return "_".join(fake.name().split(" ")).lower()
 
 def write_seed_files(max_num_files: int = 25):
-    eicar_string = r'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+    # Seed "malware" files contain only the harmless EICAR test string — never a real
+    # payload. Sourced from the safety module so the invariant has one definition.
+    from app.server.modules.safety.safety import EICAR_TEST_STRING
+    eicar_string = EICAR_TEST_STRING
     for i in range(1, max_num_files):
         file_name = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))+random.choice(['.exe','.dll','.dat'])
         unique_string = f"Welcome to KC7, the cybersecurity game. If you're a player, congrats! You found malware file {file_name}. If you aren't a player... how'd you find us? Visit kc7cyber.com to learn more!"
