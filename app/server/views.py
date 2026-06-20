@@ -892,7 +892,23 @@ def manage_challenges():
     """Admin: view, add, delete, and bulk-import challenges."""
     challenge_list = Challenge.query.order_by(Challenge.category, Challenge.name).all()
     round_list = GameRound.query.order_by(GameRound.name).all()
-    return render_template("admin/manage_challenges.html", challenges=challenge_list, rounds=round_list)
+
+    # Solve counts per challenge: {challenge_id: count}
+    from sqlalchemy import func as sqlfunc
+    solve_counts_raw = db.session.query(Solve.challenge_id, sqlfunc.count(Solve.id))\
+        .group_by(Solve.challenge_id).all()
+    solve_counts = {ch_id: cnt for ch_id, cnt in solve_counts_raw}
+
+    # Total non-admin player count (for % calculation)
+    total_players = Users.query.filter(Users.team_id != 1).count()
+
+    return render_template(
+        "admin/manage_challenges.html",
+        challenges=challenge_list,
+        rounds=round_list,
+        solve_counts=solve_counts,
+        total_players=total_players,
+    )
 
 
 @main.route("/admin/add_challenge", methods=["POST"])
@@ -1275,6 +1291,93 @@ def round_rankings(round_id):
 
 
 # ---------------------------------------------------------------------------
+# Player profile page
+# ---------------------------------------------------------------------------
+
+@main.route("/profile")
+@login_required
+def profile_self():
+    """Redirect to current user's own profile."""
+    return redirect(url_for("main.profile", username=current_user.username))
+
+
+@main.route("/profile/<username>")
+@login_required
+def profile(username):
+    """Per-player profile and stats page.
+
+    The player can only view their own profile.
+    Admins can view any player's profile.
+    """
+    is_admin = current_user.has_role("Admin")
+    if not is_admin and username != current_user.username:
+        abort(403)
+
+    target = Users.query.filter_by(username=username).first_or_404()
+
+    from sqlalchemy import func as sqlfunc
+
+    # --- Solve history ---
+    solves = (
+        db.session.query(Solve, Challenge)
+        .join(Challenge, Solve.challenge_id == Challenge.id)
+        .filter(Solve.user_id == target.id)
+        .order_by(Solve.solved_at.desc())
+        .all()
+    )
+
+    # --- Global rank (by total score, excluding admin team) ---
+    all_scores = db.session.query(Users.id, Users.score)\
+        .filter(Users.team_id != 1)\
+        .order_by(Users.score.desc())\
+        .all()
+    rank = next((i + 1 for i, row in enumerate(all_scores) if row[0] == target.id), None)
+    total_players = len(all_scores)
+
+    # --- Challenges solved count ---
+    total_solved = len(solves)
+    total_challenges = Challenge.query.count()
+
+    # --- Per-round participation with score ---
+    round_ids = db.session.query(Participation.round_id)\
+        .filter(Participation.user_id == target.id).all()
+    round_ids = [r[0] for r in round_ids]
+
+    round_stats = []
+    for rid in round_ids:
+        gr = db.session.get(GameRound, rid)
+        if not gr:
+            continue
+        r_score = db.session.query(sqlfunc.sum(Solve.points_awarded))\
+            .join(Challenge, Solve.challenge_id == Challenge.id)\
+            .filter(Challenge.round_id == rid, Solve.user_id == target.id)\
+            .scalar() or 0
+        r_solved = db.session.query(sqlfunc.count(Solve.id))\
+            .join(Challenge, Solve.challenge_id == Challenge.id)\
+            .filter(Challenge.round_id == rid, Solve.user_id == target.id)\
+            .scalar() or 0
+        r_total = Challenge.query.filter_by(round_id=rid).count()
+        round_stats.append({
+            "round": gr,
+            "score": r_score,
+            "solved": r_solved,
+            "total": r_total,
+        })
+
+    return render_template(
+        "main/profile.html",
+        target=target,
+        solves=solves,
+        rank=rank,
+        total_players=total_players,
+        total_solved=total_solved,
+        total_challenges=total_challenges,
+        round_stats=round_stats,
+        is_own_profile=(target.id == current_user.id),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Named game rounds — admin routes
 # ---------------------------------------------------------------------------
 
@@ -1383,10 +1486,149 @@ def toggle_round_timer(round_id):
 
 
 # ---------------------------------------------------------------------------
+# CSV export routes (admin)
+# ---------------------------------------------------------------------------
+
+import csv as _csv
+import io as _io
+
+
+def _csv_response(filename, rows, headers):
+    """Build a CSV HTTP response from a list of dicts."""
+    output = _io.StringIO()
+    writer = _csv.DictWriter(output, fieldnames=headers, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    from flask import Response
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@main.route("/admin/export/users")
+@roles_required("Admin")
+@login_required
+def export_users_csv():
+    """Download all non-admin users as a CSV."""
+    users = Users.query.filter(Users.team_id != 1).order_by(Users.username).all()
+    rows = []
+    for u in users:
+        rows.append({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "team": u.team.name if u.team else "",
+            "role": ", ".join(r.name for r in u.roles),
+            "score": u.score or 0,
+        })
+    return _csv_response("users.csv", rows, ["id", "username", "email", "team", "role", "score"])
+
+
+@main.route("/admin/export/teams")
+@roles_required("Admin")
+@login_required
+def export_teams_csv():
+    """Download all non-admin teams as a CSV."""
+    teams = Team.query.filter(Team.id != 1).order_by(Team.name).all()
+    rows = []
+    for t in teams:
+        rows.append({
+            "id": t.id,
+            "name": t.name,
+            "members": t.members.count(),
+            "score": t.score or 0,
+        })
+    return _csv_response("teams.csv", rows, ["id", "name", "members", "score"])
+
+
+@main.route("/admin/export/round/<int:round_id>/results")
+@roles_required("Admin")
+@login_required
+def export_round_results_csv(round_id):
+    """Download per-round solve log as a CSV."""
+    gr = db.session.get(GameRound, round_id)
+    if not gr:
+        abort(404)
+
+    solves = (
+        db.session.query(Solve, Challenge, Users)
+        .join(Challenge, Solve.challenge_id == Challenge.id)
+        .join(Users, Solve.user_id == Users.id)
+        .filter(Challenge.round_id == round_id)
+        .filter(Users.team_id != 1)
+        .order_by(Solve.solved_at)
+        .all()
+    )
+
+    rows = []
+    for solve, ch, user in solves:
+        rows.append({
+            "username": user.username,
+            "team": user.team.name if user.team else "",
+            "challenge": ch.name,
+            "category": ch.category,
+            "points_awarded": solve.points_awarded,
+            "solved_at": solve.solved_at.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+    safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in gr.name)
+    return _csv_response(
+        f"round_{safe_name}_results.csv",
+        rows,
+        ["username", "team", "challenge", "category", "points_awarded", "solved_at"],
+    )
+
+
+@main.route("/admin/export/round/<int:round_id>/scores")
+@roles_required("Admin")
+@login_required
+def export_round_scores_csv(round_id):
+    """Download per-round player score summary as a CSV."""
+    from sqlalchemy import func as sqlfunc
+    gr = db.session.get(GameRound, round_id)
+    if not gr:
+        abort(404)
+
+    participant_ids = [p.user_id for p in gr.participants.all()]
+    players = Users.query.filter(
+        Users.id.in_(participant_ids),
+        Users.team_id != 1
+    ).all()
+
+    rows = []
+    for p in players:
+        r_score = db.session.query(sqlfunc.sum(Solve.points_awarded))\
+            .join(Challenge, Solve.challenge_id == Challenge.id)\
+            .filter(Challenge.round_id == round_id, Solve.user_id == p.id)\
+            .scalar() or 0
+        r_solved = db.session.query(sqlfunc.count(Solve.id))\
+            .join(Challenge, Solve.challenge_id == Challenge.id)\
+            .filter(Challenge.round_id == round_id, Solve.user_id == p.id)\
+            .scalar() or 0
+        rows.append({
+            "username": p.username,
+            "team": p.team.name if p.team else "",
+            "score": r_score,
+            "challenges_solved": r_solved,
+        })
+
+    rows.sort(key=lambda x: -x["score"])
+    safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in gr.name)
+    return _csv_response(
+        f"round_{safe_name}_scores.csv",
+        rows,
+        ["username", "team", "score", "challenges_solved"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Malicious indicator seeding (admin)
 # ---------------------------------------------------------------------------
 
 import re as _re
+
 
 def _detect_itype(value):
     """Auto-detect indicator type from its value."""
@@ -1402,6 +1644,152 @@ def _detect_itype(value):
         return 'hash'
     return 'domain'
 
+
+@main.route("/admin/manage_indicators")
+@login_required
+@roles_required("Admin")
+def manage_indicators():
+    """Admin: view and manage seeded malicious indicators."""
+    indicators = MaliciousIndicator.query.order_by(MaliciousIndicator.added_at.desc()).all()
+    counts = {
+        'domain': MaliciousIndicator.query.filter_by(itype='domain').count(),
+        'ip':     MaliciousIndicator.query.filter_by(itype='ip').count(),
+        'email':  MaliciousIndicator.query.filter_by(itype='email').count(),
+        'hash':   MaliciousIndicator.query.filter_by(itype='hash').count(),
+    }
+    return render_template("admin/manage_indicators.html", indicators=indicators, counts=counts)
+
+
+@main.route("/admin/add_indicator", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def add_indicator():
+    """Admin: add a single malicious indicator."""
+    try:
+        value = request.form.get("value", "").strip()
+        itype = request.form.get("itype", "auto").strip()
+        if not value:
+            flash("Indicator value is required.", "error")
+            return redirect(url_for("main.manage_indicators"))
+        if itype == "auto":
+            itype = _detect_itype(value)
+        # Skip duplicates
+        existing = MaliciousIndicator.query.filter_by(value=value).first()
+        if existing:
+            flash(f"Indicator already exists: {value}", "info")
+            return redirect(url_for("main.manage_indicators"))
+        ind = MaliciousIndicator(value=value, itype=itype)
+        db.session.add(ind)
+        db.session.commit()
+        flash(f"Added indicator: {value} ({itype})", "success")
+    except Exception as e:
+        print("add_indicator error:", e)
+        flash("Failed to add indicator: " + str(e), "error")
+    return redirect(url_for("main.manage_indicators"))
+
+
+@main.route("/admin/delete_indicator", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def delete_indicator():
+    """Admin: remove a single malicious indicator."""
+    try:
+        ind_id = int(request.form["indicator_id"])
+        ind = db.session.get(MaliciousIndicator, ind_id)
+        if ind:
+            db.session.delete(ind)
+            db.session.commit()
+            flash("Indicator removed.", "success")
+    except Exception as e:
+        print("delete_indicator error:", e)
+        flash("Failed to delete indicator: " + str(e), "error")
+    return redirect(url_for("main.manage_indicators"))
+
+
+@main.route("/admin/bulk_add_indicators", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def bulk_add_indicators():
+    """Admin: add many indicators from a textarea (one per line, optional ,type)."""
+    try:
+        raw = request.form.get("indicators", "")
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        added = skipped = 0
+        for line in lines:
+            parts = line.split(",", 1)
+            value = parts[0].strip()
+            itype = parts[1].strip() if len(parts) == 2 else "auto"
+            if not value:
+                continue
+            if itype == "auto":
+                itype = _detect_itype(value)
+            if MaliciousIndicator.query.filter_by(value=value).first():
+                skipped += 1
+                continue
+            db.session.add(MaliciousIndicator(value=value, itype=itype))
+            added += 1
+        db.session.commit()
+        flash(f"Added {added} indicator(s). {skipped} duplicate(s) skipped.", "success")
+    except Exception as e:
+        print("bulk_add_indicators error:", e)
+        flash("Failed to bulk-add indicators: " + str(e), "error")
+    return redirect(url_for("main.manage_indicators"))
+
+
+@main.route("/admin/clear_indicators", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def clear_indicators():
+    """Admin: delete all malicious indicators."""
+    try:
+        count = MaliciousIndicator.query.delete()
+        db.session.commit()
+        flash(f"Cleared {count} indicator(s).", "success")
+    except Exception as e:
+        print("clear_indicators error:", e)
+        flash("Failed to clear indicators: " + str(e), "error")
+    return redirect(url_for("main.manage_indicators"))
+
+
+@main.route("/admin/import_indicators_csv", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def import_indicators_csv():
+    """Admin: upload a CSV file of malicious indicators."""
+    try:
+        f = request.files.get("csv_file")
+        if not f or not f.filename:
+            flash("No file uploaded.", "error")
+            return redirect(url_for("main.manage_indicators"))
+        import csv as _csv2
+        import io as _io2
+        reader = _csv2.reader(_io2.StringIO(f.read().decode("utf-8", errors="ignore")))
+        added = skipped = 0
+        for row in reader:
+            if not row:
+                continue
+            value = row[0].strip()
+            if not value or value.lower() in ("value", "indicator"):
+                continue  # header row
+            itype = row[1].strip() if len(row) > 1 else "auto"
+            if itype not in ("domain", "ip", "email", "hash"):
+                itype = _detect_itype(value)
+            if MaliciousIndicator.query.filter_by(value=value).first():
+                skipped += 1
+                continue
+            db.session.add(MaliciousIndicator(value=value, itype=itype))
+            added += 1
+        db.session.commit()
+        flash(f"Imported {added} indicator(s). {skipped} duplicate(s) skipped.", "success")
+    except Exception as e:
+        print("import_indicators_csv error:", e)
+        flash("Failed to import CSV: " + str(e), "error")
+    return redirect(url_for("main.manage_indicators"))
+
+
+# ---------------------------------------------------------------------------
+# ADX configuration (admin)
+# ---------------------------------------------------------------------------
 
 @main.route("/admin/adx_config", methods=["GET", "POST"])
 @login_required
@@ -1444,6 +1832,10 @@ def adx_test():
         return jsonify(success=False, message=str(e))
 
 
+# ---------------------------------------------------------------------------
+# Live answer feed (admin)
+# ---------------------------------------------------------------------------
+
 @main.route("/admin/live_dashboard")
 @login_required
 @roles_required("Admin")
@@ -1457,201 +1849,68 @@ def live_dashboard():
 @login_required
 @roles_required("Admin")
 def live_feed():
-    """
-    JSON feed of recent AnswerAttempts for the live dashboard.
-    ?since=<id>   — only return attempts with id > since (for incremental polling)
-    ?round_id=<n> — filter to challenges belonging to this round (0 = global only, -1 = all)
-    ?limit=<n>    — max rows to return (default 200)
-    """
-    since    = int(request.args.get("since",    0))
-    round_id = request.args.get("round_id", "-1")   # "-1" means all rounds
-    limit    = min(int(request.args.get("limit", 200)), 500)
+    """JSON polling endpoint for the live answer feed.
 
-    q = AnswerAttempt.query.filter(AnswerAttempt.id > since)
-
-    if round_id != "-1":
-        rid = int(round_id)
-        # join to filter by challenge.round_id
-        q = q.join(Challenge, AnswerAttempt.challenge_id == Challenge.id)
-        if rid == 0:
-            q = q.filter(Challenge.round_id == None)
-        else:
-            q = q.filter(Challenge.round_id == rid)
-
-    attempts = q.order_by(AnswerAttempt.id.desc()).limit(limit).all()
-
-    rows = [a.to_dict() for a in attempts]
-
-    # Stats for the whole filtered set (not just this page)
-    stats_q = AnswerAttempt.query
-    if round_id != "-1":
-        rid = int(round_id)
-        stats_q = stats_q.join(Challenge, AnswerAttempt.challenge_id == Challenge.id)
-        if rid == 0:
-            stats_q = stats_q.filter(Challenge.round_id == None)
-        else:
-            stats_q = stats_q.filter(Challenge.round_id == rid)
-    total      = stats_q.count()
-    correct_ct = stats_q.filter(AnswerAttempt.correct == True).count()
-    max_id     = db.session.query(sqlfunc.max(AnswerAttempt.id)).scalar() or 0
-
-    return jsonify(
-        rows=rows,
-        max_id=max_id,
-        stats=dict(total=total, correct=correct_ct,
-                   pct=round(100 * correct_ct / total, 1) if total else 0),
-    )
-
-
-@main.route("/admin/manage_indicators")
-@roles_required("Admin")
-@login_required
-def manage_indicators():
-    """Admin: view and manage manually-seeded malicious indicators."""
-    indicators = MaliciousIndicator.query.order_by(
-        MaliciousIndicator.itype, MaliciousIndicator.value
-    ).all()
-    counts = {
-        'domain': sum(1 for i in indicators if i.itype == 'domain'),
-        'ip':     sum(1 for i in indicators if i.itype == 'ip'),
-        'email':  sum(1 for i in indicators if i.itype == 'email'),
-        'hash':   sum(1 for i in indicators if i.itype == 'hash'),
-    }
-    return render_template("admin/manage_indicators.html",
-                           indicators=indicators, counts=counts)
-
-
-@main.route("/admin/add_indicator", methods=["POST"])
-@roles_required("Admin")
-@login_required
-def add_indicator():
-    """Admin: add a single indicator."""
-    try:
-        value = request.form.get("value", "").strip().lower()
-        itype = request.form.get("itype", "").strip().lower()
-        if not value:
-            flash("Indicator value is required.", "error")
-            return redirect(url_for("main.manage_indicators"))
-        if itype not in ("domain", "ip", "email", "hash"):
-            itype = _detect_itype(value)
-        if MaliciousIndicator.query.filter_by(value=value).first():
-            flash("Indicator already exists: " + value, "info")
-            return redirect(url_for("main.manage_indicators"))
-        db.session.add(MaliciousIndicator(value=value, itype=itype))
-        db.session.commit()
-        flash("Added " + itype + ": " + value, "success")
-    except Exception as e:
-        print("add_indicator error: " + str(e))
-        flash("Failed to add indicator: " + str(e), "error")
-    return redirect(url_for("main.manage_indicators"))
-
-
-@main.route("/admin/delete_indicator", methods=["POST"])
-@roles_required("Admin")
-@login_required
-def delete_indicator():
-    """Admin: delete a single indicator."""
-    try:
-        ind_id = int(request.form["indicator_id"])
-        ind = db.session.get(MaliciousIndicator, ind_id)
-        if ind:
-            db.session.delete(ind)
-            db.session.commit()
-            flash("Indicator removed.", "success")
-    except Exception as e:
-        print("delete_indicator error: " + str(e))
-        flash("Failed to delete indicator.", "error")
-    return redirect(url_for("main.manage_indicators"))
-
-
-@main.route("/admin/bulk_add_indicators", methods=["POST"])
-@roles_required("Admin")
-@login_required
-def bulk_add_indicators():
-    """
-    Admin: add multiple indicators at once from a textarea (one per line).
-    Type is auto-detected per line. Duplicates are silently skipped.
+    Query params:
+        since   (int)  — only return rows with id > since (default 0)
+        round_id (int) — -1=all, 0=global only, >0=specific round
+        limit   (int)  — max rows to return (default 100)
     """
     try:
-        raw     = request.form.get("indicators", "")
-        lines   = [l.strip().lower() for l in raw.splitlines() if l.strip()]
-        added   = 0
-        skipped = 0
-        for line in lines:
-            # Support optional  "value,type" format
-            if ',' in line:
-                parts = [p.strip() for p in line.split(',', 1)]
-                value = parts[0]
-                itype = parts[1] if parts[1] in ("domain", "ip", "email", "hash") else _detect_itype(value)
-            else:
-                value = line
-                itype = _detect_itype(value)
-            if not value:
-                continue
-            if MaliciousIndicator.query.filter_by(value=value).first():
-                skipped += 1
-                continue
-            db.session.add(MaliciousIndicator(value=value, itype=itype))
-            added += 1
-        db.session.commit()
-        flash("Added " + str(added) + " indicator(s). Skipped " + str(skipped) + " duplicate(s).", "success")
+        since    = int(request.args.get("since",    0))
+        limit    = min(int(request.args.get("limit", 100)), 500)
+        round_id = request.args.get("round_id", "-1")
+
+        q = db.session.query(AnswerAttempt, Challenge, Users)\
+            .join(Challenge, AnswerAttempt.challenge_id == Challenge.id)\
+            .join(Users, AnswerAttempt.user_id == Users.id)\
+            .filter(AnswerAttempt.id > since)\
+            .filter(Users.team_id != 1)
+
+        if round_id not in ("-1", "", None):
+            rid = int(round_id)
+            if rid == 0:
+                q = q.filter(Challenge.round_id == None)
+            elif rid > 0:
+                q = q.filter(Challenge.round_id == rid)
+
+        rows_raw = q.order_by(AnswerAttempt.id.desc()).limit(limit).all()
+
+        rows = []
+        max_id = since
+        for attempt, ch, user in rows_raw:
+            if attempt.id > max_id:
+                max_id = attempt.id
+            rows.append({
+                "id":           attempt.id,
+                "attempted_at": attempt.attempted_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "username":     user.username,
+                "team":         user.team.name if user.team else "—",
+                "challenge":    ch.name,
+                "category":     ch.category,
+                "submitted":    attempt.submitted,
+                "correct":      bool(attempt.correct),
+                "round_id":     ch.round_id,
+            })
+
+        # Stats (all time, matching round filter)
+        sq = db.session.query(AnswerAttempt)\
+            .join(Challenge, AnswerAttempt.challenge_id == Challenge.id)\
+            .join(Users, AnswerAttempt.user_id == Users.id)\
+            .filter(Users.team_id != 1)
+        if round_id not in ("-1", "", None):
+            rid = int(round_id)
+            if rid == 0:
+                sq = sq.filter(Challenge.round_id == None)
+            elif rid > 0:
+                sq = sq.filter(Challenge.round_id == rid)
+        total   = sq.count()
+        correct = sq.filter(AnswerAttempt.correct == True).count()
+        pct     = round(correct / total * 100, 1) if total else 0
+
+        return jsonify(rows=rows, max_id=max_id, stats={
+            "total": total, "correct": correct, "pct": pct
+        })
     except Exception as e:
-        print("bulk_add_indicators error: " + str(e))
-        flash("Bulk add failed: " + str(e), "error")
-    return redirect(url_for("main.manage_indicators"))
-
-
-@main.route("/admin/import_indicators_csv", methods=["POST"])
-@roles_required("Admin")
-@login_required
-def import_indicators_csv():
-    """
-    Admin: import indicators from a CSV file.
-    Expected columns: value[, type]  — type column is optional; auto-detected if absent.
-    """
-    import csv, io
-    try:
-        f = request.files.get("csv_file")
-        if not f or not f.filename:
-            flash("No file selected.", "error")
-            return redirect(url_for("main.manage_indicators"))
-        stream = io.StringIO(f.stream.read().decode("utf-8-sig"), newline=None)
-        reader = csv.reader(stream)
-        added   = 0
-        skipped = 0
-        for i, row in enumerate(reader):
-            if not row:
-                continue
-            value = row[0].strip().lower()
-            if not value or (i == 0 and value in ("value", "indicator", "ioc")):
-                continue   # skip header
-            itype = row[1].strip().lower() if len(row) > 1 else ""
-            if itype not in ("domain", "ip", "email", "hash"):
-                itype = _detect_itype(value)
-            if MaliciousIndicator.query.filter_by(value=value).first():
-                skipped += 1
-                continue
-            db.session.add(MaliciousIndicator(value=value, itype=itype))
-            added += 1
-        db.session.commit()
-        flash("Imported " + str(added) + " indicator(s). Skipped " + str(skipped) + " duplicate(s).", "success")
-    except Exception as e:
-        print("import_indicators_csv error: " + str(e))
-        flash("CSV import failed: " + str(e), "error")
-    return redirect(url_for("main.manage_indicators"))
-
-
-@main.route("/admin/clear_indicators", methods=["POST"])
-@roles_required("Admin")
-@login_required
-def clear_indicators():
-    """Admin: remove ALL manually-seeded indicators."""
-    try:
-        count = MaliciousIndicator.query.count()
-        MaliciousIndicator.query.delete()
-        db.session.commit()
-        flash("Cleared " + str(count) + " indicator(s).", "success")
-    except Exception as e:
-        print("clear_indicators error: " + str(e))
-        flash("Failed to clear indicators: " + str(e), "error")
-    return redirect(url_for("main.manage_indicators"))
+        print("live_feed error:", e)
+        return jsonify(rows=[], max_id=since, stats={"total": 0, "correct": 0, "pct": 0})

@@ -12,12 +12,15 @@
     <div class="text-right">
       {% if game_round.uses_timer and game_round.end_time %}
         {% if game_round.is_expired %}
-          <span class="badge badge-danger badge-pill px-3 py-2">Session Ended</span>
+          <span class="badge badge-danger badge-pill px-3 py-2" id="timer-badge">
+            <i class="fas fa-lock mr-1"></i> Session Ended
+          </span>
         {% else %}
           <span class="badge badge-success badge-pill px-3 py-2" id="timer-badge">
-            <i class="fas fa-clock mr-1"></i> Ends {{ game_round.end_time.strftime('%Y-%m-%d %H:%M') }}
+            <i class="fas fa-clock mr-1"></i> <span id="countdown-text">Loading...</span>
           </span>
         {% endif %}
+        <span id="countdown-end-ts" style="display:none;">{{ (game_round.end_time.timestamp() * 1000) | int }}</span>
       {% endif %}
       <a href="/rounds/{{ game_round.id }}/rankings" class="btn btn-outline-secondary btn-sm ml-2">
         <i class="fas fa-trophy mr-1"></i> Rankings
@@ -125,6 +128,49 @@
   {% endfor %}
 
   <script>
+    // --- Live countdown timer ---
+    (function() {
+      var endTsEl = document.getElementById('countdown-end-ts');
+      var countdownEl = document.getElementById('countdown-text');
+      var badgeEl = document.getElementById('timer-badge');
+      if (!endTsEl || !countdownEl) return;
+
+      var endTs = parseInt(endTsEl.textContent.trim(), 10);
+
+      function tick() {
+        var remaining = endTs - Date.now();
+        if (remaining <= 0) {
+          badgeEl.className = 'badge badge-danger badge-pill px-3 py-2';
+          badgeEl.innerHTML = '<i class="fas fa-lock mr-1"></i> Session Ended';
+          // Disable all submit buttons
+          document.querySelectorAll('.challenge-form button[type="submit"]').forEach(function(b) {
+            b.disabled = true;
+          });
+          return;
+        }
+
+        var totalSecs = Math.floor(remaining / 1000);
+        var h = Math.floor(totalSecs / 3600);
+        var m = Math.floor((totalSecs % 3600) / 60);
+        var s = totalSecs % 60;
+        var pad = function(n) { return n < 10 ? '0' + n : n; };
+        var display = (h > 0 ? h + ':' + pad(m) : m) + ':' + pad(s);
+
+        countdownEl.textContent = display + ' remaining';
+
+        // Turn red when under 10 minutes
+        if (remaining < 600000) {
+          badgeEl.className = 'badge badge-danger badge-pill px-3 py-2';
+        } else if (remaining < 1800000) {
+          badgeEl.className = 'badge badge-warning badge-pill px-3 py-2';
+        }
+
+        setTimeout(tick, 1000);
+      }
+
+      tick();
+    })();
+
     $(document).on('submit', '.challenge-form', function(e) {
       e.preventDefault();
       var form        = $(this);

@@ -1,17 +1,14 @@
 # KC7 — A Cybersecurity Game
+[![Build Status](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue.svg)](https://shields.io/)
+![Maintenance](https://img.shields.io/maintenance/yes/2026.svg?style=flat-square)
+[![GitHub last commit](https://img.shields.io/github/last-commit/cybersheepdog/kc7.svg?style=flat-square)](https://github.com/cybersheepdog/kc7/commit/master)
+![GitHub](https://img.shields.io/github/license/cybersheepdog/kc7)
+
+Since this has not been updated in quite some time I am picking it up and adding to the great work done by all the contributors listed below.
 
 KC7 is a cybersecurity training platform that lets players learn threat investigation and threat-intelligence skills using realistic simulated data. Players use **KQL (Kusto Query Language)** inside **Azure Data Explorer** to triage logs and uncover attacker activity across a fictitious company's environment spanning the full Cyber Kill Chain.
 
-Get started at http://kc7cyber.com/modules
-
-<img width="1378" alt="KC7 screenshot" src="https://github.com/KC7-Foundation/kc7/assets/9474932/e913abab-373f-45d0-9485-8005fde3c73e">
-
 ---
-
-## 📖 Background
-
-[Read the origin story](https://mem.ai/p/nlIjcw3yPTbb0DNDfPAI)
-
 ## 👨🏽‍🎓 Who is this for?
 
 - High school and college students interested in cybersecurity
@@ -179,10 +176,11 @@ The Teams page shows a ranked leaderboard with a horizontal bar chart, split acr
 - ADX client secrets entered via the GUI are stored in the local SQLite database
 
 ---
+# Deprecated
 
-## 🤠 How to Contribute
+## 📖 Background
 
-See the [wiki](https://github.com/cybersheepdog/kc7/wiki) for codebase structure and contribution guidelines.
+[Read the origin story](https://mem.ai/p/nlIjcw3yPTbb0DNDfPAI)
 
 ## 👯 Contributors
 

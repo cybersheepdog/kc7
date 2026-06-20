@@ -65,6 +65,16 @@
                   <a href="/rounds/{{ r.id }}/challenges" class="btn btn-sm btn-outline-primary">
                     <i class="fas fa-flag"></i> Challenges
                   </a>
+                  <!-- Export solve log -->
+                  <a href="/admin/export/round/{{ r.id }}/results" class="btn btn-sm btn-outline-success"
+                     title="Download full solve log CSV">
+                    <i class="fas fa-download"></i> Log
+                  </a>
+                  <!-- Export scores -->
+                  <a href="/admin/export/round/{{ r.id }}/scores" class="btn btn-sm btn-outline-success"
+                     title="Download player score summary CSV">
+                    <i class="fas fa-download"></i> Scores
+                  </a>
                   <!-- Set timer -->
                   <button class="btn btn-sm btn-warning"
                           data-toggle="modal" data-target="#timerModal"

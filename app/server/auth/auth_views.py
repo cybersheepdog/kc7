@@ -122,7 +122,7 @@ def reset_with_token(token):
         user.set_password(form.password.data)
         db.session.add(user)
         db.session.commit()
-        flash("Password reset successfully", "success")
+        flash("Password reset successfully. Please log in.", "success")
         return redirect(url_for('auth.login'))
 
     return render_template('auth/reset_with_token.html', form=form, token=token)

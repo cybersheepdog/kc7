@@ -43,6 +43,7 @@
                   <th>Category</th>
                   <th>Round</th>
                   <th>Points</th>
+                  <th class="text-center">Solves</th>
                   <th>Description</th>
                   <th>Answer(s)</th>
                   <th style="width:10rem;">Actions</th>
@@ -63,6 +64,15 @@
                     {% endif %}
                   </td>
                   <td class="text-right font-weight-bold">{{ ch.value }}</td>
+                  <td class="text-center">
+                    {% set sc = solve_counts.get(ch.id, 0) %}
+                    <span class="badge badge-{{ 'success' if sc > 0 else 'secondary' }}">{{ sc }}</span>
+                    {% if total_players > 0 %}
+                    <small class="text-muted d-block" style="font-size:0.7rem;">
+                      {{ "%.0f"|format(sc / total_players * 100) }}%
+                    </small>
+                    {% endif %}
+                  </td>
                   <td class="small text-muted" style="max-width:220px;">{{ ch.description }}</td>
                   <td class="small"><code>{{ ch.answer }}</code></td>
                   <td>

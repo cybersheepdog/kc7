@@ -169,6 +169,7 @@ def load_user(user_id):
         return None
 
 
+
 @app.before_request
 def before_request():
     g.user = current_user

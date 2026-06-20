@@ -438,7 +438,7 @@ class ADXConfig(AuthBase):
 
     @property
     def is_configured(self):
-        return all([self.cluster_uri, self.database, self.tenant_id,
+                return all([self.cluster_uri, self.database, self.tenant_id,
                     self.client_id, self.client_secret])
 
     def __repr__(self):
