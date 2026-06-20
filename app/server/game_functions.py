@@ -15,6 +15,9 @@ GAME_PROGRESS = {
     "start_date": None,     # ISO string of the first game day
     "end_date": None,       # ISO string of the last game day
     "error": None,          # set if start_game() raises an exception
+    "cancel_requested": False,  # set by /admin/stop_game to halt a running generation
+    "cancelled": False,         # set when a run was halted before finishing
+    "log": [],                  # capped list of recent progress lines (streamed to UI)
 }
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
@@ -47,6 +50,174 @@ from app.server.utils import *
 from app.server.modules.file.vt_seed_files import FILES_MALICIOUS_VT_SEED_HASHES
 from app.server.utils import AttackTypes
 
+
+# ---------------------------------------------------------------------------
+# Registry-driven attack dispatch (#2)
+# A single declarative table replaces the old hardcoded if-chain. Each entry is
+# (trigger attack-strings, handler). The handler runs once if the actor has ANY of its
+# triggers — preserving the original collapse behavior where the several email attack
+# types share ONE gen_actor_email call and the two cloud-session types share one call.
+# Order matches the original if-chain. Adding a technique is now a one-line entry here.
+# ---------------------------------------------------------------------------
+ATTACK_DISPATCH = [
+    ((AttackTypes.PHISHING_VIA_EMAIL.value,
+      AttackTypes.MALWARE_VIA_EMAIL.value,
+      AttackTypes.SUPPLY_CHAIN_VIA_EMAIL.value),
+     lambda actor, cd, employees: gen_actor_email(employees, actor, start_date=cd)),
+
+    ((AttackTypes.PASSWORD_SPRAY.value,),
+     lambda actor, cd, employees: actor_password_spray(
+         actor=actor, start_date=cd, num_employees=random.randint(5, 50), num_passwords=5)),
+
+    ((AttackTypes.MALWARE_VIA_WATERING_HOLE.value,),
+     lambda actor, cd, employees: actor_stages_watering_hole(
+         actor=actor, start_date=cd, num_employees=random.randint(5, 10), link_type="malware_delivery")),
+
+    ((AttackTypes.PHISHING_VIA_WATERING_HOLE.value,),
+     lambda actor, cd, employees: actor_stages_watering_hole(
+         actor=actor, start_date=cd, num_employees=random.randint(5, 10), link_type="phishing")),
+
+    ((AttackTypes.RECONNAISSANCE_VIA_BROWSING.value,),
+     lambda actor, cd, employees: gen_inbound_browsing_activity(
+         actor=actor, start_date=cd, num_inbound_browsing_events=random.randint(0, 10))),
+
+    ((AttackTypes.KERBEROASTING.value,),
+     lambda actor, cd, employees: actor_kerberoasting(actor=actor, start_date=cd)),
+
+    ((AttackTypes.PSEXEC_LATERAL.value,),
+     lambda actor, cd, employees: actor_psexec_lateral(actor=actor, start_date=cd)),
+
+    ((AttackTypes.AUTOMATED_RECON.value,),
+     lambda actor, cd, employees: actor_automated_recon(actor=actor, start_date=cd)),
+
+    ((AttackTypes.LOG_CLEARING.value,),
+     lambda actor, cd, employees: actor_clears_logs(actor=actor, start_date=cd)),
+
+    ((AttackTypes.CLOUD_SESSION_HIJACKING.value,
+      AttackTypes.CLOUD_TOKEN_THEFT.value),
+     lambda actor, cd, employees: actor_cloud_session_hijacking(actor=actor, start_date=cd)),
+
+    ((AttackTypes.CLOUD_EXFIL_VIA_STORAGE.value,),
+     lambda actor, cd, employees: actor_cloud_exfil_via_storage(actor=actor, start_date=cd)),
+
+    ((AttackTypes.PERSISTENCE_SCHEDULED_TASK.value,),
+     lambda actor, cd, employees: actor_establishes_persistence(
+         actor=actor, start_date=cd, mechanism="scheduled_task")),
+
+    ((AttackTypes.PERSISTENCE_REGISTRY_RUN.value,),
+     lambda actor, cd, employees: actor_establishes_persistence(
+         actor=actor, start_date=cd, mechanism="registry_run")),
+]
+
+
+def dispatch_actor_attacks(actor, current_date, employees):
+    """
+    Run the generators for the attacks this actor has, in canonical order. A handler
+    fires once if the actor has ANY of its trigger attack strings — this preserves the
+    original collapse behavior (multiple email types -> one email send; the two
+    cloud-session types -> one call), so no technique double-fires.
+    """
+    attacks = set(actor.get_attacks())
+
+    # Campaign mode (#6, off by default): pin one compromised host + C2 IP for this
+    # actor so its post-compromise stages thread into a single huntable intrusion.
+    campaign_on = False
+    try:
+        campaign_on = bool(current_app.config.get("CAMPAIGN_MODE_ENABLED"))
+    except Exception:
+        campaign_on = False
+    if campaign_on:
+        from app.server.modules.advanced_attacks.advanced_attacks_controller import (
+            build_campaign, set_active_campaign, init_campaign_clock,
+        )
+        set_active_campaign(build_campaign(actor))
+        init_campaign_clock(actor, current_date)
+
+    try:
+        for triggers, handler in ATTACK_DISPATCH:
+            if attacks.intersection(triggers):
+                handler(actor, current_date, employees)
+                if campaign_on:
+                    # dwell before the next kill-chain stage (#8)
+                    from app.server.modules.advanced_attacks.advanced_attacks_controller import advance_campaign_clock
+                    advance_campaign_clock(actor)
+    finally:
+        if campaign_on:
+            from app.server.modules.advanced_attacks.advanced_attacks_controller import clear_active_campaign
+            clear_active_campaign()
+
+
+def assert_dispatch_covers_enum():
+    """Every AttackTypes member must be wired into the dispatch table (no forgotten
+    technique). Raises AssertionError listing any gaps."""
+    covered = set()
+    for triggers, _ in ATTACK_DISPATCH:
+        covered.update(triggers)
+    missing = {a.value for a in AttackTypes} - covered
+    assert not missing, f"AttackTypes not wired into dispatch: {sorted(missing)}"
+
+
+def _record_run_start():
+    """Open a generation run-history record. Best-effort — never raises (#28)."""
+    try:
+        from app.server.models import GameRunLog
+        run = GameRunLog(status="running")
+        db.session.add(run)
+        db.session.commit()
+        return run.id
+    except Exception as e:
+        print("run-history: failed to record start: " + str(e))
+        return None
+
+
+def _record_run_finish(run_id, status, error=None, start_date=None, end_date=None,
+                       days=None, table_counts=None):
+    """Close out a run-history record. Best-effort — never raises (#28)."""
+    if run_id is None:
+        return
+    try:
+        import datetime as _dt
+        import json as _json
+        from app.server.models import GameRunLog
+        run = db.session.get(GameRunLog, run_id)
+        if run:
+            run.status = status
+            run.finished_at = _dt.datetime.now()
+            if error is not None:
+                run.error = str(error)[:500]
+            if start_date is not None:
+                run.game_start_date = str(start_date)
+            if end_date is not None:
+                run.game_end_date = str(end_date)
+            if days is not None:
+                run.days_generated = days
+            if table_counts:
+                run.table_counts = _json.dumps(table_counts)
+            db.session.commit()
+    except Exception as e:
+        print("run-history: failed to record finish: " + str(e))
+
+
+def _uploader_row_counts():
+    """Return a snapshot of per-table rows sent by the active LOG_UPLOADER, or None."""
+    try:
+        return dict(LOG_UPLOADER.row_counts)
+    except Exception:
+        return None
+
+
+def _progress_log(message: str, cap: int = 60):
+    """Print a progress line and append it to the capped streamed-log buffer (#28)."""
+    try:
+        print(message)
+        log = GAME_PROGRESS.setdefault("log", [])
+        log.append(message)
+        if len(log) > cap:
+            del log[:len(log) - cap]
+    except Exception:
+        pass
+
+
 def start_game() -> None:
     """
     This function call starts the game
@@ -62,6 +233,11 @@ def start_game() -> None:
     GAME_PROGRESS["current_date"] = None
     GAME_PROGRESS["start_date"] = None
     GAME_PROGRESS["end_date"] = None
+    GAME_PROGRESS["cancel_requested"] = False
+    GAME_PROGRESS["cancelled"] = False
+    GAME_PROGRESS["log"] = []
+
+    run_id = None  # generation run-history record id (#28)
 
     try:
         print("Starting the game...")
@@ -72,6 +248,9 @@ def start_game() -> None:
         from app.server.modules.config_validation.config_validator import validate_or_raise
         validate_or_raise()
         print("Game configs validated OK.")
+
+        # Open a run-history record (best-effort; never aborts generation)
+        run_id = _record_run_start()
 
         # instantiate a logUploader. This instance is used by all other modules to send logs to azure
         # we use a singular instances in order to queue up muliple rows of logs and send them all at once
@@ -112,12 +291,14 @@ def start_game() -> None:
         GAME_PROGRESS["start_date"] = start_date.isoformat()
         GAME_PROGRESS["end_date"] = end_date.isoformat()
 
+        days_done = 0
         while current_date <= end_date:
+            # Allow an admin to halt a long run mid-generation (#28)
+            if GAME_PROGRESS.get("cancel_requested"):
+                GAME_PROGRESS["cancelled"] = True
+                break
             GAME_PROGRESS["current_date"] = current_date.isoformat()
-
-            print("##########################################")
-            print(f"## Running for day {current_date}...")
-            print("##########################################")
+            _progress_log(f"Day {current_date}: generating activity for {len(actors)} actor(s)...")
 
             for actor in actors:
                 if actor.is_default_actor:
@@ -133,13 +314,23 @@ def start_game() -> None:
                     )
 
             current_date += timedelta(days=1)
+            days_done += 1
 
-        print("Done running!")
-        GAME_PROGRESS["complete"] = True
+        if GAME_PROGRESS.get("cancelled"):
+            _progress_log(f"Generation cancelled by admin after {days_done} day(s).")
+            _record_run_finish(run_id, "cancelled", start_date=start_date, end_date=end_date,
+                               days=days_done, table_counts=_uploader_row_counts())
+        else:
+            _progress_log("Done running!")
+            GAME_PROGRESS["complete"] = True
+            _record_run_finish(run_id, "complete", start_date=start_date, end_date=end_date,
+                               days=(end_date - start_date).days + 1,
+                               table_counts=_uploader_row_counts())
 
     except Exception as e:
         print(f"start_game() failed: {e}")
         GAME_PROGRESS["error"] = str(e)
+        _record_run_finish(run_id, "error", error=e, table_counts=_uploader_row_counts())
         raise
     finally:
         GAME_PROGRESS["running"] = False
@@ -293,6 +484,7 @@ def generate_activity_new(actor: Actor,
         # Generate passive dns
         gen_passive_dns(actor, current_date, num_passive_dns)
 
+<<<<<<< HEAD
         # Send emails (phishing, malware delivery, or supply-chain via compromised partners)
         if AttackTypes.PHISHING_VIA_EMAIL.value in actor.get_attacks()\
         or AttackTypes.MALWARE_VIA_EMAIL.value in actor.get_attacks()\
@@ -363,6 +555,10 @@ def generate_activity_new(actor: Actor,
 
         if AttackTypes.PERSISTENCE_REGISTRY_RUN.value in actor.get_attacks():
             actor_establishes_persistence(actor=actor, start_date=current_date, mechanism="registry_run")
+=======
+        # Dispatch the actor's configured attacks (registry-driven; see ATTACK_DISPATCH).
+        dispatch_actor_attacks(actor, current_date, employees)
+>>>>>>> roadmap
 
 def create_actors() -> None:
     """

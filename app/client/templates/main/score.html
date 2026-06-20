@@ -126,6 +126,19 @@
       });
     }
 
+    // Cyber/dark theme: recolor the leaderboard chart so axis labels and bars read
+    // well on a dark card (the shared chart defaults are tuned for the light theme).
+    if (document.body.classList.contains('theme-cyber') && typeof myBarChart !== 'undefined') {
+      myBarChart.data.datasets[0].backgroundColor = '#22d3ee';
+      myBarChart.data.datasets[0].hoverBackgroundColor = '#67e8f9';
+      myBarChart.data.datasets[0].borderColor = '#22d3ee';
+      myBarChart.options.scales.xAxes[0].ticks.fontColor = '#8190ab';
+      myBarChart.options.scales.yAxes[0].ticks.fontColor = '#cdd5e3';
+      myBarChart.options.scales.xAxes[0].gridLines.color = 'rgba(255,255,255,0.06)';
+      myBarChart.options.scales.xAxes[0].gridLines.zeroLineColor = 'rgba(255,255,255,0.10)';
+      myBarChart.update();
+    }
+
     update_values();
     window.setInterval(update_values, 10000);
 

@@ -85,6 +85,8 @@ class LogUploader():
         self.queue = {}
         # how many records do we hold until submitting everything to kusto
         self.queue_limit = queue_limit
+        # running tally of rows sent per table over this uploader's life (#28 run-history)
+        self.row_counts = {}
 
     def create_tables(self, reset: bool = False) -> None:
         """
@@ -203,6 +205,9 @@ class LogUploader():
             self.queue[table_name].append(data)
         else:
             self.queue[table_name] = [data]
+
+        # tally rows per table for run-history / live progress (#28)
+        self.row_counts[table_name] = self.row_counts.get(table_name, 0) + 1
 
         # reached the queue limit
         # submit all existing records and clear the queue

@@ -34,7 +34,13 @@
                             0%
                         </div>
                     </div>
-                    <small class="text-muted">The UI remains responsive while data generates in the background.</small>
+                    <small class="text-muted">The UI remains responsive while data generates in the background. Use <b>Stop</b> to cancel a run.</small>
+                    <pre id="progress-log" class="mt-2 mb-0 p-2 small" style="display:none; max-height:170px; overflow:auto; background:#f4f5fb; border:1px solid #e4e6ef; border-radius:6px;"></pre>
+                </div>
+
+                <!-- Cancelled banner -->
+                <div id="cancelled-section" class="alert alert-warning mt-3" style="display:none;">
+                    Generation was cancelled. Partial data may have been generated — see Run History.
                 </div>
 
                 <!-- Error banner (hidden unless an error occurs) -->
@@ -112,6 +118,12 @@
             <div class="card-body">
                 Generate scenario documents and check scoring. These open in a new tab.
                 <div class="my-3"></div>
+<<<<<<< HEAD
+=======
+                <a href="/admin/manage_scenario" class="btn btn-primary mb-2">
+                    <i class="fas fa-drafting-compass mr-1"></i> Manage Scenario (actors / malware)
+                </a>
+>>>>>>> roadmap
                 <a href="/admin/preview_scenario" target="_blank" class="btn btn-info mb-2">
                     <i class="fas fa-binoculars mr-1"></i> Scenario Preview (dry run)
                 </a>
@@ -124,6 +136,12 @@
                 <a href="/admin/score_audit" target="_blank" class="btn btn-warning mb-2">
                     <i class="fas fa-balance-scale mr-1"></i> Score Audit
                 </a>
+<<<<<<< HEAD
+=======
+                <a href="/admin/run_history" target="_blank" class="btn btn-outline-secondary mb-2">
+                    <i class="fas fa-history mr-1"></i> Run History
+                </a>
+>>>>>>> roadmap
             </div>
         </div>
 
@@ -283,11 +301,27 @@
             }
             setProgressBar(data.progress_pct || 0);
 
+            if (data.log && data.log.length) {
+                var logEl = document.getElementById('progress-log');
+                if (logEl) {
+                    logEl.style.display = 'block';
+                    logEl.textContent = data.log.join('\n');
+                    logEl.scrollTop = logEl.scrollHeight;
+                }
+            }
+
             if (data.error) {
                 stopPollingStatus();
                 $('#error-message').text(data.error);
                 $('#error-section').show();
                 updateGameState('Error');
+                return;
+            }
+
+            if (data.cancelled) {
+                stopPollingStatus();
+                $('#cancelled-section').show();
+                updateGameState('Cancelled');
                 return;
             }
 
