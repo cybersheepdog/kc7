@@ -21,6 +21,8 @@ from app.server.modules.organization.Company import Employee
 from app.server.modules.authentication.authenticationEvent import AuthenticationEvent
 from app.server.modules.inbound_browsing.inboundEvent import InboundBrowsingEvent
 from app.server.modules.alerts.alerts import SecurityAlert
+from app.server.modules.endpoints.security_event import SecurityEvent
+from app.server.modules.cloud.cloud_events import CloudSignInEvent, CloudStorageEvent
 
 
 class LogUploader():
@@ -53,9 +55,10 @@ class LogUploader():
         self.DATABASE         = _cfg(adx_cfg.database      if adx_cfg else None, "DATABASE")
         self.CUSTOM_TYPES = [
                                 DNSRecord, Employee,
-                                OutboundEvent, FileCreationEvent, 
-                                Email, AuthenticationEvent, InboundBrowsingEvent, 
-                                ProcessEvent, SecurityAlert]
+                                OutboundEvent, FileCreationEvent,
+                                Email, AuthenticationEvent, InboundBrowsingEvent,
+                                ProcessEvent, SecurityAlert,
+                                SecurityEvent, CloudSignInEvent, CloudStorageEvent]
 
         # Authenticate with AAD application.
         self.client_id     = _cfg(adx_cfg.client_id     if adx_cfg else None, "CLIENT_ID")

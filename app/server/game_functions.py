@@ -31,6 +31,15 @@ from app.server.modules.inbound_browsing.inbound_browsing_controller import gen_
 from app.server.modules.authentication.auth_controller import auth_random_user_to_mail_server, actor_password_spray
 from app.server.modules.helpers.config_helper import read_config_from_yaml
 from app.server.modules.endpoints.endpoint_controller import gen_system_files_on_host, gen_user_files_on_host, gen_system_processes_on_host
+from app.server.modules.advanced_attacks.advanced_attacks_controller import (
+    actor_kerberoasting,
+    actor_psexec_lateral,
+    actor_clears_logs,
+    actor_automated_recon,
+    actor_cloud_session_hijacking,
+    actor_cloud_exfil_via_storage,
+    actor_establishes_persistence,
+)
 from app.server.modules.file.malware import Malware
 from app.server.modules.helpers.config_helper import load_malware_obj_from_yaml_by_file, read_list_from_file
 
@@ -305,10 +314,39 @@ def generate_activity_new(actor: Actor,
         
         # Recon activity
         if AttackTypes.RECONNAISSANCE_VIA_BROWSING.value in actor.get_attacks():
-            gen_inbound_browsing_activity(actor=actor, 
-                                          start_date=current_date, 
+            gen_inbound_browsing_activity(actor=actor,
+                                          start_date=current_date,
                                           num_inbound_browsing_events=random.randint(0,10))
-    
+
+        # Lateral movement & local privilege escalation
+        if AttackTypes.KERBEROASTING.value in actor.get_attacks():
+            actor_kerberoasting(actor=actor, start_date=current_date)
+
+        if AttackTypes.PSEXEC_LATERAL.value in actor.get_attacks():
+            actor_psexec_lateral(actor=actor, start_date=current_date)
+
+        # Defense evasion & discovery
+        if AttackTypes.AUTOMATED_RECON.value in actor.get_attacks():
+            actor_automated_recon(actor=actor, start_date=current_date)
+
+        if AttackTypes.LOG_CLEARING.value in actor.get_attacks():
+            actor_clears_logs(actor=actor, start_date=current_date)
+
+        # Modern cloud infrastructure attacks
+        if AttackTypes.CLOUD_SESSION_HIJACKING.value in actor.get_attacks()\
+        or AttackTypes.CLOUD_TOKEN_THEFT.value in actor.get_attacks():
+            actor_cloud_session_hijacking(actor=actor, start_date=current_date)
+
+        if AttackTypes.CLOUD_EXFIL_VIA_STORAGE.value in actor.get_attacks():
+            actor_cloud_exfil_via_storage(actor=actor, start_date=current_date)
+
+        # Advanced persistence mechanisms
+        if AttackTypes.PERSISTENCE_SCHEDULED_TASK.value in actor.get_attacks():
+            actor_establishes_persistence(actor=actor, start_date=current_date, mechanism="scheduled_task")
+
+        if AttackTypes.PERSISTENCE_REGISTRY_RUN.value in actor.get_attacks():
+            actor_establishes_persistence(actor=actor, start_date=current_date, mechanism="registry_run")
+
 def create_actors() -> None:
     """
     Create a malicious actor in the game and adds them to the database

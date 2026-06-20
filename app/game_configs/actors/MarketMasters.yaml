@@ -15,6 +15,9 @@ working_days:
 attacks:
   - recon:browsing
   - email:phishing
+  - discovery:automated_recon
+  - cloud:session_hijacking
+  - cloud:exfiltration_via_storage
 domain_themes:
   - market
   - sales

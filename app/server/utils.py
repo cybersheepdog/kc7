@@ -40,6 +40,23 @@ class AttackTypes(Enum):
     MALWARE_VIA_WATERING_HOLE       = "watering_hole:malware_delivery"
     PHISHING_VIA_WATERING_HOLE      = "watering_hole:phishing"
 
+    # --- Lateral movement & local privilege escalation ---
+    KERBEROASTING                   = "identity:kerberoasting"
+    PSEXEC_LATERAL                  = "execution:psexec_lateral"
+
+    # --- Defense evasion & discovery ---
+    LOG_CLEARING                    = "evasion:log_clearing"
+    AUTOMATED_RECON                 = "discovery:automated_recon"
+
+    # --- Modern cloud infrastructure attacks ---
+    CLOUD_SESSION_HIJACKING         = "cloud:session_hijacking"
+    CLOUD_TOKEN_THEFT               = "cloud:token_theft"
+    CLOUD_EXFIL_VIA_STORAGE         = "cloud:exfiltration_via_storage"
+
+    # --- Advanced persistence mechanisms ---
+    PERSISTENCE_SCHEDULED_TASK      = "persistence:scheduled_task"
+    PERSISTENCE_REGISTRY_RUN        = "persistence:registry_run"
+
 
 def timing(f):
     @wraps(f)

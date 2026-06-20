@@ -15,6 +15,11 @@ working_days:
 attacks:
   - recon:browsing
   - email:malware_delivery
+  - identity:kerberoasting
+  - execution:psexec_lateral
+  - evasion:log_clearing
+  - persistence:scheduled_task
+  - persistence:registry_run
 spoofs_email: True
 malware:
   - phoenixmal
