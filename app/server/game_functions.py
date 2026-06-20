@@ -66,6 +66,13 @@ def start_game() -> None:
     try:
         print("Starting the game...")
 
+        # Validate scenario configs BEFORE touching Azure, so a typo in an actor /
+        # company / malware YAML fails fast with a clear message instead of crashing
+        # deep inside generation. Valid configs are unaffected.
+        from app.server.modules.config_validation.config_validator import validate_or_raise
+        validate_or_raise()
+        print("Game configs validated OK.")
+
         # instantiate a logUploader. This instance is used by all other modules to send logs to azure
         # we use a singular instances in order to queue up muliple rows of logs and send them all at once
         global LOG_UPLOADER

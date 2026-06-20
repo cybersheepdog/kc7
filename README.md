@@ -96,6 +96,18 @@ Players join named rounds using a password code. Each round has its own scoped c
 #### Leaderboard
 The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams and Players tabs. Rankings are sorted by score with tie-breaking by earliest score time.
 
+#### Expanded Threat Coverage 🆕
+Scenarios now span the **full Cyber Kill Chain**, so investigations go far beyond the initial phishing email. Players hunt adversaries through:
+
+- **Credential access** — password spray and **Kerberoasting** (RC4 service-ticket requests).
+- **Discovery** — bursts of host/domain reconnaissance commands a normal user never runs.
+- **Lateral movement** — **PsExec** service-binary pushes over SMB, mapping the hop-by-hop path between machines.
+- **Defense evasion** — **security/system event-log clearing** that leaves a deliberate blind spot to pivot around.
+- **Persistence** — **scheduled tasks** and **Run/RunOnce registry** keys that re-launch malware after a reboot.
+- **Cloud attacks** — **session/token hijacking** (impossible-travel sign-ins) and **exfiltration via public storage buckets**.
+
+This activity surfaces across new endpoint and cloud log sources (`SecurityEvents`, `CloudSignInLogs`, `CloudStorageLogs`) alongside the existing tables — see [Simulated Telemetry](#-simulated-telemetry-adx-tables).
+
 ---
 
 ### For Admins
@@ -148,6 +160,55 @@ The Teams page shows a ranked leaderboard with a horizontal bar chart, split acr
 - Running stats: total attempts, correct count, success rate
 - Pause/resume without losing buffered data
 
+#### Adversary Techniques (Actor Configs) 🆕
+Each malicious actor is defined by a YAML file in `app/game_configs/actors/`. The actor's `attacks:` list controls which techniques it carries out during data generation — add or remove a technique string to change what telemetry the scenario produces. No code changes are needed to re-mix techniques across actors.
+
+```yaml
+# app/game_configs/actors/BluePhoenix.yaml
+attacks:
+  - email:malware_delivery
+  - identity:kerberoasting        # 🆕
+  - execution:psexec_lateral      # 🆕
+  - evasion:log_clearing          # 🆕
+  - persistence:scheduled_task    # 🆕
+  - persistence:registry_run      # 🆕
+```
+
+Available techniques, grouped by kill-chain phase, with their MITRE ATT&CK mapping (🆕 = newly added):
+
+| Phase | Technique string | MITRE ATT&CK | What it generates |
+|---|---|---|---|
+| Delivery / Initial Access | `email:phishing` | T1566.002 | Credential-phishing emails |
+| | `email:malware_delivery` | T1566.001 | Emails delivering a malicious file/link |
+| | `delivery:supply_chain` | T1199 | Phishing from compromised partner/vendor addresses |
+| | `watering_hole:malware_delivery` | T1189 | Malware served from a compromised website |
+| | `watering_hole:phishing` | T1189 | Credential phishing via a compromised website |
+| Credential Access | `identity:password_spray` | T1110.003 | Password spray against employee accounts |
+| | `identity:kerberoasting` 🆕 | T1558.003 | RC4 Kerberos service-ticket requests (Event ID 4769) |
+| Discovery | `recon:browsing` | T1593 | External reconnaissance browsing |
+| | `discovery:automated_recon` 🆕 | T1087 | Dense burst of host/domain discovery commands |
+| Lateral Movement | `execution:psexec_lateral` 🆕 | T1021.002 | PsExec service-binary push over SMB (Event ID 7045) |
+| Defense Evasion | `evasion:log_clearing` 🆕 | T1070.001 | Security/System event-log clearing (Event ID 1102 / 104) |
+| Persistence | `persistence:scheduled_task` 🆕 | T1053.005 | `schtasks.exe` scheduled-task persistence |
+| | `persistence:registry_run` 🆕 | T1547.001 | `Run` / `RunOnce` registry persistence |
+| Cloud | `cloud:session_hijacking` 🆕 | T1539 | Impossible-travel session/token replay |
+| | `cloud:token_theft` 🆕 | T1528 | Alias of session hijacking (token replay) |
+| | `cloud:exfiltration_via_storage` 🆕 | T1530 | Public storage bucket + mass object reads |
+
+> These technique strings, their ATT&CK mappings, and the log tables each one writes are defined centrally in `app/server/modules/attacks/attack_registry.py` — the single source of truth used for validation and documentation.
+
+#### Scenario Config Validation 🆕
+When a game starts, every actor / company / malware YAML is validated **before any Azure connection is made**. If a config has a problem, generation stops immediately with a clear, aggregated message naming the file and field — instead of failing deep inside data generation. It catches:
+
+- Unknown or misspelled fields, with a "did you mean?" suggestion.
+- Invalid `attacks:` entries — e.g. `remote_exploit` instead of a real technique string — again with a suggestion.
+- Missing required fields and wrong value types (a date that isn't `YYYY-MM-DD`, an `attacks` value that isn't a list, etc.).
+- Hard cross-references — a watering-hole technique with no `watering_hole_domains`, or a `malware:` name with no matching malware config.
+
+Validation is dependency-free and additive: valid configs behave exactly as before.
+
+> Tip: a single actor can combine techniques across phases to tell a connected intrusion story. See [`ROADMAP.md`](ROADMAP.md) for planned work on kill-chain campaigns and auto-generated challenges/guides.
+
 ---
 
 ## 🗄️ Data Model
@@ -165,6 +226,31 @@ The Teams page shows a ranked leaderboard with a horizontal bar chart, split acr
 | `participations` | Player ↔ round membership |
 | `malicious_indicators` | Admin-seeded indicators for scoring |
 | `adx_config` | GUI-managed ADX connection settings |
+
+> These are the application's own SQLite tables. The simulated security logs that **players query in KQL** are separate and live in Azure Data Explorer — see below.
+
+---
+
+## 🛰️ Simulated Telemetry (ADX Tables)
+
+When the game runs, it generates realistic security logs and ingests them into Azure Data Explorer. These are the tables players investigate with KQL (🆕 = added with the expanded threat coverage):
+
+| Table | What it captures |
+|---|---|
+| `Employees` | Company directory — usernames, hostnames, IPs, roles |
+| `PassiveDns` | Domain → IP resolutions for actor and legitimate infrastructure |
+| `OutboundBrowsing` | Employees browsing out to websites (proxy-style web logs) |
+| `InboundBrowsing` | Requests hitting the company's own sites (recon, email exfil) |
+| `Email` | Inbound/outbound email, including phishing and malware delivery |
+| `AuthenticationEvents` | Logins to the mail server and internal servers (password spray, lateral movement) |
+| `FileCreationEvents` | Files written to endpoints (downloads, dropped payloads) |
+| `ProcessEvents` | Process execution — recon bursts, persistence, hands-on-keyboard activity |
+| `SecurityEvents` 🆕 | Windows event log — Kerberos `4769`, service install `7045`, log clear `1102`/`104` |
+| `CloudSignInLogs` 🆕 | Cloud identity sign-ins with city/country for impossible-travel detection |
+| `CloudStorageLogs` 🆕 | Cloud storage ACL changes and object reads (storage exfil) |
+| `SecurityAlerts` | Simulated EDR/email alerts, including realistic false positives |
+
+New tables are created automatically on game start (registered in `LogUploader.CUSTOM_TYPES`); no manual ADX schema setup is required.
 
 ---
 
