@@ -1,0 +1,29 @@
+{% extends "auth/auth_base.html" %}
+{% block body %}
+
+<div class="row justify-content-center">
+    <div class="col-xl-6 col-lg-8 col-md-9">
+        <div class="card o-hidden border-0 shadow-lg my-5">
+            <div class="card-body p-5">
+                <div class="text-center">
+                    <h1 class="h4 text-gray-900 mb-4">Choose a new password</h1>
+                </div>
+                <form class="user" method="POST" action="{{ url_for('auth.reset_with_token', token=token) }}">
+                    {{ form.hidden_tag() }}
+                    <div class="form-group">
+                        {{ form.password(class="form-control form-control-user", placeholder="New password") }}
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-user btn-block">
+                        Set new password
+                    </button>
+                </form>
+                <hr>
+                <div class="text-center">
+                    <a class="small" href="/login">Back to login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

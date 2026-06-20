@@ -1,5 +1,11 @@
 name: MarketMasters
 effectiveness: 75
+# Attribution metadata (for attribution exercises + the scenario guide)
+attribution: MarketMasters
+aliases:
+  - Bazaar Spider
+origin: "Simulated financially-motivated crew"
+motivation: "Financial fraud / data theft"
 count_init_passive_dns: 5
 max_wave_size: 2
 activity_start_date: "2023-03-27"

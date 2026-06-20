@@ -352,6 +352,16 @@ def update_deny_list():
             # Tie-break consistency: update on every score (same rule as players) so
             # equal team scores rank by who reached that total first.
             current_user.team.last_score_time = now
+            # Record each correct indicator as a per-award row so scores stay exactly
+            # recomputable (the indicator equivalent of a Solve record).
+            from app.server.models import MitigationAward
+            for _ind in correct_new:
+                db.session.add(MitigationAward(
+                    user_id=current_user.id,
+                    team_id=current_user.team_id,
+                    indicator=_ind,
+                    points_awarded=points_per_correct,
+                ))
             print("User " + current_user.username + " +" + str(points_earned) + " pts, "
                   + str(len(correct_new)) + " indicators @ " + str(points_per_correct))
 
@@ -1723,6 +1733,64 @@ def test_answer():
         return jsonify(error="Provide either challenge_id or accepted"), 400
 
     return jsonify(explain_match(submitted, accepted))
+
+
+@main.route("/admin/score_audit")
+@roles_required("Admin")
+@login_required
+def score_audit():
+    """
+    Score reconciliation, and optionally a destructive rebuild.
+
+    Default (read-only): recompute each player's/team's totals from the Solve +
+    MitigationAward records and compare to the stored running totals to surface any
+    desync. ?format=json for the structured report; otherwise a plain-text table.
+
+    ?apply=1 : DESTRUCTIVE — overwrite every player's/team's stored ``score`` and
+    ``last_score_time`` with the values recomputed from records. Use after editing/
+    deleting challenges or answers to bring standings back in sync.
+    """
+    from flask import Response
+    from app.server.modules.scoring.score_recompute import (
+        reconcile, format_reconciliation_text, compute_rebuild,
+    )
+    from app.server.models import MitigationAward
+
+    users = Users.query.filter(Users.team_id != 1).all()
+    teams = Team.query.filter(Team.id != 1).all()
+    solves = Solve.query.all()
+    awards = MitigationAward.query.all()
+
+    if request.args.get("apply") == "1":
+        target = compute_rebuild(users, teams, solves, awards)
+        changes = []
+        for u in users:
+            tgt = target["users"].get(u.id) or {"score": 0, "last_score_time": None}
+            if (u.score or 0) != tgt["score"]:
+                changes.append("player %s: %s -> %s" % (u.username, u.score or 0, tgt["score"]))
+            u.score = tgt["score"]
+            u.last_score_time = tgt["last_score_time"]
+        for tm in teams:
+            tgt = target["teams"].get(tm.id) or {"score": 0, "last_score_time": None}
+            if (tm.score or 0) != tgt["score"]:
+                changes.append("team %s: %s -> %s" % (tm.name, tm.score or 0, tgt["score"]))
+            tm.score = tgt["score"]
+            tm.last_score_time = tgt["last_score_time"]
+        db.session.commit()
+        print("Score rebuild applied: %d change(s) across %d players, %d teams"
+              % (len(changes), len(users), len(teams)))
+        report = reconcile(users, teams, solves, awards)  # should now show all-zero deltas
+        if request.args.get("format") == "json":
+            return jsonify(applied=True, changes=changes, report=report)
+        body = ("SCORE REBUILD APPLIED — %d change(s):\n  %s\n\n%s"
+                % (len(changes), "\n  ".join(changes) or "(no changes)",
+                   format_reconciliation_text(report)))
+        return Response(body, mimetype="text/plain")
+
+    report = reconcile(users, teams, solves, awards)
+    if request.args.get("format") == "json":
+        return jsonify(report)
+    return Response(format_reconciliation_text(report), mimetype="text/plain")
 
 
 # ---------------------------------------------------------------------------

@@ -134,6 +134,11 @@ def preview_scenario(actor_dir: str = "app/game_configs/actors",
 
         actors.append({
             "name": cfg.get("name", os.path.basename(path)),
+            "attribution": cfg.get("attribution"),
+            "aliases": cfg.get("aliases") or [],
+            "attack_group_id": cfg.get("attack_group_id"),
+            "origin": cfg.get("origin"),
+            "motivation": cfg.get("motivation"),
             "window": {
                 "start": eff_start.isoformat() if eff_start else None,
                 "end": eff_end.isoformat() if eff_end else None,
@@ -189,6 +194,12 @@ def format_preview_text(preview: dict) -> str:
     for a in preview.get("actors", []):
         lines.append("-" * 70)
         lines.append(f"ACTOR: {a['name']}")
+        if a.get("attribution") or a.get("aliases"):
+            akas = (" (aka " + ", ".join(a["aliases"]) + ")") if a.get("aliases") else ""
+            gid = f" [{a['attack_group_id']}]" if a.get("attack_group_id") else ""
+            lines.append(f"  Attribution: {a.get('attribution') or '?'}{akas}{gid}")
+        if a.get("origin") or a.get("motivation"):
+            lines.append(f"  Profile: {a.get('origin') or '?'} · {a.get('motivation') or '?'}")
         lines.append(f"  Active: ~{a['expected_active_days']} of {a['active_days']} working days "
                      f"({a['window']['start']} → {a['window']['end']})")
         lines.append(f"  Techniques ({len(a['techniques'])}):")

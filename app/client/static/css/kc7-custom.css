@@ -1,0 +1,139 @@
+/* ===========================================================================
+   KC7 custom theme
+   ---------------------------------------------------------------------------
+   An ADDITIVE refresh layered on top of SB Admin 2 (loaded after
+   sb-admin-2.min.css). It only overrides colors / spacing / shadows — no page
+   structure or class names change, so it can't break any template. Tuning the
+   variables below recolors the whole app.
+   =========================================================================== */
+
+:root {
+  --kc7-primary:        #4f46e5;   /* indigo accent */
+  --kc7-primary-dark:   #4338ca;
+  --kc7-primary-soft:   rgba(79, 70, 229, 0.10);
+  --kc7-accent:         #14b8a6;   /* teal highlight */
+  --kc7-ink:            #1f2533;   /* headings */
+  --kc7-muted:          #6b7280;
+  --kc7-bg:             #f4f5fb;   /* page background */
+  --kc7-card-radius:    0.6rem;
+  --kc7-card-shadow:    0 0.15rem 1.25rem rgba(31, 37, 51, 0.06);
+  --kc7-card-shadow-hi: 0 0.5rem 1.75rem rgba(31, 37, 51, 0.12);
+  --kc7-sidebar-a:      #111827;   /* dark SOC-style sidebar */
+  --kc7-sidebar-b:      #1f2937;
+}
+
+/* ---- base ---- */
+body {
+  background-color: var(--kc7-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #3a4151;
+}
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 { color: var(--kc7-ink); }
+a { color: var(--kc7-primary); }
+a:hover { color: var(--kc7-primary-dark); }
+
+/* ---- primary recolor (indigo replaces SB Admin 2 blue) ---- */
+.text-primary { color: var(--kc7-primary) !important; }
+.bg-primary   { background-color: var(--kc7-primary) !important; }
+.border-left-primary { border-left: 0.25rem solid var(--kc7-primary) !important; }
+.btn-primary {
+  background-color: var(--kc7-primary);
+  border-color: var(--kc7-primary);
+}
+.btn-primary:hover, .btn-primary:focus, .btn-primary:active,
+.btn-primary:not(:disabled):not(.disabled):active {
+  background-color: var(--kc7-primary-dark) !important;
+  border-color: var(--kc7-primary-dark) !important;
+  box-shadow: 0 0 0 0.2rem var(--kc7-primary-soft) !important;
+}
+.btn-outline-primary { color: var(--kc7-primary); border-color: var(--kc7-primary); }
+.btn-outline-primary:hover { background-color: var(--kc7-primary); border-color: var(--kc7-primary); }
+.page-item.active .page-link { background-color: var(--kc7-primary); border-color: var(--kc7-primary); }
+.page-link { color: var(--kc7-primary); }
+
+/* ---- buttons: subtle polish ---- */
+.btn { border-radius: 0.45rem; transition: all 0.15s ease-in-out; font-weight: 600; }
+.btn:hover { transform: translateY(-1px); }
+
+/* ---- sidebar: dark slate gradient (SOC feel) ---- */
+.bg-gradient-primary {
+  background-color: var(--kc7-sidebar-a);
+  background-image: linear-gradient(180deg, var(--kc7-sidebar-a) 10%, var(--kc7-sidebar-b) 100%);
+  background-size: cover;
+}
+.sidebar-dark .nav-item .nav-link { color: rgba(255, 255, 255, 0.78); }
+.sidebar-dark .nav-item .nav-link:hover,
+.sidebar-dark .nav-item.active .nav-link { color: #fff; }
+.sidebar-dark .nav-item.active .nav-link {
+  border-left: 3px solid var(--kc7-accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+.sidebar .nav-item .nav-link i { color: rgba(255, 255, 255, 0.55); }
+.sidebar-dark .sidebar-brand { color: #fff; letter-spacing: 0.03em; }
+.sidebar-dark hr.sidebar-divider { border-top-color: rgba(255, 255, 255, 0.10); }
+
+/* ---- topbar ---- */
+.topbar {
+  box-shadow: 0 0.1rem 0.6rem rgba(31, 37, 51, 0.06) !important;
+  border-bottom: 1px solid #edeff4;
+}
+.topbar .nav-item .nav-link { color: var(--kc7-muted); }
+
+/* ---- cards ---- */
+.card {
+  border: none;
+  border-radius: var(--kc7-card-radius);
+  box-shadow: var(--kc7-card-shadow);
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+.card.shadow:hover { box-shadow: var(--kc7-card-shadow-hi); transform: translateY(-2px); }
+.card .card-header {
+  background-color: #fff;
+  border-bottom: 1px solid #eef0f4;
+  border-top-left-radius: var(--kc7-card-radius);
+  border-top-right-radius: var(--kc7-card-radius);
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+.card .card-header h6 { letter-spacing: 0.01em; }
+
+/* keep the left-accent stat cards crisp */
+.border-left-success { border-left-width: 0.25rem !important; }
+.border-left-info    { border-left-width: 0.25rem !important; }
+.border-left-warning { border-left-width: 0.25rem !important; }
+
+/* ---- tables ---- */
+.table thead th {
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--kc7-muted);
+  background-color: #fafbfe;
+  border-bottom: 2px solid #eef0f4;
+  border-top: none;
+}
+.table td, .table th { vertical-align: middle; }
+.table-hover tbody tr:hover { background-color: var(--kc7-primary-soft); }
+
+/* ---- forms ---- */
+.form-control { border-radius: 0.45rem; }
+.form-control:focus {
+  border-color: var(--kc7-primary);
+  box-shadow: 0 0 0 0.2rem var(--kc7-primary-soft);
+}
+
+/* ---- badges ---- */
+.badge { border-radius: 0.4rem; font-weight: 600; padding: 0.35em 0.6em; }
+
+/* ---- login / auth pages (auth_base uses body.bg-gradient-primary) ---- */
+body.bg-gradient-primary { min-height: 100vh; }
+.card.o-hidden { border-radius: 0.9rem; box-shadow: 0 1rem 2.5rem rgba(17, 24, 39, 0.35); }
+.bg-login-image, .bg-register-image, .bg-password-image { filter: saturate(0.85); }
+.btn-user.btn-primary { background-color: var(--kc7-primary); border-color: var(--kc7-primary); }
+
+/* ---- misc polish ---- */
+.dropdown-menu { border: none; box-shadow: 0 0.5rem 1.5rem rgba(31, 37, 51, 0.12); border-radius: 0.55rem; }
+hr { border-top-color: #eef0f4; }
+.progress { border-radius: 0.5rem; }
+.progress-bar { background-color: var(--kc7-primary); }

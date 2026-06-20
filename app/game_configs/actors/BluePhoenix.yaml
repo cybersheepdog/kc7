@@ -1,5 +1,12 @@
 name: BluePhoenix
 effectiveness: 85
+# Attribution metadata (for attribution exercises + the scenario guide)
+attribution: BluePhoenix
+aliases:
+  - Azure Serpent
+  - TEMP.Phoenix
+origin: "Simulated state-sponsored espionage group"
+motivation: "Espionage / intellectual-property theft"
 count_init_passive_dns: 10
 max_wave_size: 3
 activity_start_date: "2023-03-05"

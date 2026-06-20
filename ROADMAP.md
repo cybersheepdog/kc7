@@ -250,7 +250,14 @@ Grounded in the current scoring path (`submit_answer`, `update_deny_list`,
     `Users`/`Team` with no way to rebuild them. `Solve.points_awarded` and
     `AnswerAttempt` already log everything, so add a recalculate-from-records function
     (and ideally derive the board from records) so corrected answers / deleted solves /
-    changed challenge values can't silently desync standings.
+    changed challenge values can't silently desync standings. *Status: 🚧 a
+    **non-destructive reconciliation** ships at `/admin/score_audit` — it recomputes
+    challenge points from `Solve` **plus indicator points from `MitigationAward`** and
+    flags desync (negative delta). The indicator-award gap is now closed: a
+    `MitigationAward` row is written for every correct indicator (the indicator
+    equivalent of `Solve`), so the recompute is **exact for games run since**. The
+    destructive **rebuild** also shipped: `?apply=1` overwrites every score and
+    `last_score_time` from the records (`compute_rebuild`). #20 complete.*
 
 ### Answer matching
 
@@ -391,6 +398,13 @@ infrastructure inert and never ship real malware binaries.
 40. **Actor attribution metadata.** Extend actor configs with group name + aliases
     (e.g. "APT29 / Cozy Bear / Midnight Blizzard"), ATT&CK Group ID (`G####`), suspected
     origin, and motivation, plus the ATT&CK techniques that group actually uses.
+    *Status: ✅ done — actor configs accept `attribution`, `aliases`, `attack_group_id`
+    (validated as `G####`), `origin`, and `motivation`, with **no DB schema change** (the
+    metadata is read from the YAML by the validator, preview, and PDF rather than stored
+    on the `Actor` table). The techniques the group uses are derived from the actor's
+    `attacks` via the registry. Demonstrated on BluePhoenix/MarketMasters; surfaced in
+    the scenario preview and the instructor-key PDF (excluded from the player packet).
+    This also unblocks the actor-side of #46 — `attack_group_id` format is now validated.*
 
 41. **Real TTP tooling & command lines.** Populate `post_exploit_commands` and the
     malware `recon_processes`/`c2_processes` with the emulated group's real tooling and
@@ -423,6 +437,12 @@ infrastructure inert and never ship real malware binaries.
 
 46. **Validator extension.** Grow the config validator (#1) to check that an actor's
     declared ATT&CK group/technique IDs exist and that intel-pack references resolve.
+    *Status: 🚧 ATT&CK technique-id validation shipped — the registry now self-validates
+    that every technique carries a well-formed MITRE id (`assert_attack_ids_wellformed`,
+    wired into the validation pre-flight so a typo'd id fails fast), and a reusable
+    `validate_attack_ids()` helper is ready for actor-declared techniques. The actor
+    ATT&CK-group and intel-pack reference checks await the attribution metadata (#40) and
+    intel-packs (#43).*
 
 ---
 
@@ -498,7 +518,7 @@ Risk is the chance of disturbing existing behavior.
 | 21 | Answer normalization & defang | S–M | Very low | ✅ **Done** — universal normalizer wired into `check_answer` + indicator scoring; type/regex layers pending |
 | 18 | Team double-credit | — | — | ✅ Decision: intended behavior (both team & player earn per solve); no change |
 | 19 | Consistent tie-break timestamps | S | Low | ✅ **Done** — teams now update `last_score_time` on every score (same rule as players: earliest to reach total wins) |
-| 20 | Recompute scores from solves | M | Low | Repair/derive board from `Solve`/`AnswerAttempt` |
+| 20 | Recompute scores from solves | M | Low | ✅ **Done** — `/admin/score_audit` reconciles (challenge+indicator) vs stored; awards recorded (`mitigation_awards`); `?apply=1` destructively rebuilds scores + times from records |
 | 27 | `/get_score` N+1 + cache | S | Low | 🚧 N+1 fixed (eager-load `Users.team`) ✅; short cache deferred until live auto-refresh (#24) adds poll load |
 | 24 | Live auto-refresh standings | S–M | Low | SSE / poll / persisted live view |
 | 25 | Richer visualization | M | Low | Phase breakdown, score-over-time, first blood, ranks |
@@ -525,8 +545,8 @@ Risk is the chance of disturbing existing behavior.
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
 | 39 | Inert-indicator safety controls | S | Low | Guardrail — do first; toggle, provenance, keep EICAR |
-| 40 | Actor attribution metadata | S | Low | ATT&CK group + aliases on actor config |
-| 46 | Validator extension (ATT&CK / intel refs) | S | Very low | Extends #1; catches bad group/technique IDs |
+| 40 | Actor attribution metadata | S | Low | ✅ **Done** — attribution/aliases/group-id/origin/motivation on actor config; validated; surfaced in preview + instructor-key PDF |
+| 46 | Validator extension (ATT&CK / intel refs) | S | Very low | 🚧 ATT&CK-id validation done (registry self-check in pre-flight + `validate_attack_ids`); actor-group/intel-pack refs await #40/#43 |
 | 42 | Real malware families + historical hashes | M | Low | Inert hashes-as-strings only; provenance |
 | 41 | Real TTP tooling & command lines | M | Low | From ATT&CK / Atomic Red Team |
 | 43 | Intel-pack ingestion (ATT&CK STIX + abuse.ch) | M–L | Low | Extends data packs (#4); licensing-aware |

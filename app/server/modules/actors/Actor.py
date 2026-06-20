@@ -71,7 +71,9 @@ class Actor(Base):
                 count_init_passive_dns:int=100, count_init_email:int=1, count_init_browsing:int=2, max_wave_size:int=2,
                 file_names:list=[], file_extensions:list=[], attacks:list=[], malware:list=[], recon_search_terms:list=[],
                 post_exploit_commands:list=[], difficulty="HARD", watering_hole_domains:list=[], watering_hole_target_roles:list=[],
-                sender_domains:list=[],domain_depth=None):
+                sender_domains:list=[],domain_depth=None,
+                attribution:str=None, aliases:list=None, attack_group_id:str=None,
+                origin:str=None, motivation:str=None):
 
         print(f"Instantiating actor {name}....")
         self.name = name
@@ -110,7 +112,18 @@ class Actor(Base):
         # turn the dicts into strings and join the list into a string
         # so list[dict] -> str~str~str
         self.post_exploit_commands      = "~".join([json.dumps(p) for p in post_exploit_commands])
-        
+
+        # --- Attribution metadata (config/display only; NOT persisted as DB columns) ---
+        # Describes which real/emulated threat group the actor represents, for attribution
+        # exercises and the scenario guide. The YAML config is the source of truth (read by
+        # the preview / PDF / validator); accepted here so Actor(**config) works and the
+        # validator (which derives known fields from this signature) recognizes them.
+        self._attribution     = attribution
+        self._aliases         = aliases or []
+        self._attack_group_id = attack_group_id
+        self._origin          = origin
+        self._motivation      = motivation
+
 
     @property
     def is_default_actor(self) -> bool:

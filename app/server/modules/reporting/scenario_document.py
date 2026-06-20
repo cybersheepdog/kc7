@@ -239,6 +239,19 @@ def build_scenario_dict(round_id=None) -> dict:
             "activity_end_date": company.activity_end_date,
         }
 
+    # Attribution metadata lives in the YAML configs (not the DB model) — load it by name.
+    import glob
+    import yaml
+    attribution_by_name = {}
+    for path in glob.glob("app/game_configs/actors/*.yaml"):
+        try:
+            with open(path) as fh:
+                cfg = yaml.safe_load(fh) or {}
+            if isinstance(cfg, dict) and cfg.get("name"):
+                attribution_by_name[cfg["name"]] = cfg
+        except Exception:
+            pass
+
     # Actors + their ATT&CK techniques (from the registry)
     actors = []
     for actor in Actor.query.filter(Actor.name != "Default").all():
@@ -247,7 +260,13 @@ def build_scenario_dict(round_id=None) -> dict:
             spec = get_spec(attack)
             if spec:
                 techniques.append({"id": spec.attack_id, "name": spec.attack_name, "phase": spec.phase})
-        actors.append({"name": actor.name, "techniques": techniques})
+        cfg = attribution_by_name.get(actor.name, {})
+        attribution = None
+        if cfg.get("attribution") or cfg.get("aliases"):
+            akas = (" / " + " / ".join(cfg.get("aliases") or [])) if cfg.get("aliases") else ""
+            motiv = (" — " + cfg["motivation"]) if cfg.get("motivation") else ""
+            attribution = (cfg.get("attribution") or actor.name) + akas + motiv
+        actors.append({"name": actor.name, "attribution": attribution, "techniques": techniques})
 
     # Challenges (optionally scoped to a round)
     q = Challenge.query

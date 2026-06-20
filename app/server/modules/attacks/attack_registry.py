@@ -17,7 +17,13 @@ which the dispatch loop uses. ``assert_registry_matches_enum()`` checks the two 
 in sync so a new enum member can't be added without a registry entry (and vice-versa).
 """
 
+import re
 from dataclasses import dataclass, field
+
+
+# A well-formed MITRE ATT&CK technique id: T#### with an optional .### sub-technique
+# (e.g. T1566, T1558.003). Used to validate the registry and any actor-declared ids.
+ATTACK_ID_PATTERN = re.compile(r"^T\d{4}(\.\d{3})?$")
 
 
 # Kill-chain phase labels (kept as plain strings for easy display/grouping)
@@ -265,3 +271,28 @@ def assert_registry_matches_enum() -> None:
     if missing_from_enum:
         problems.append(f"Registry entries with no AttackTypes member: {sorted(missing_from_enum)}")
     assert not problems, "; ".join(problems)
+
+
+# ---------------------------------------------------------------------------
+# MITRE ATT&CK id validation
+# ---------------------------------------------------------------------------
+def is_valid_attack_id(value: str) -> bool:
+    """True if value is a well-formed MITRE ATT&CK technique id (e.g. T1566, T1558.003)."""
+    return bool(ATTACK_ID_PATTERN.match(value or ""))
+
+
+def known_attack_ids() -> set:
+    """The set of MITRE ATT&CK technique ids referenced by the registry."""
+    return {spec.attack_id for spec in ATTACK_REGISTRY.values()}
+
+
+def assert_attack_ids_wellformed() -> None:
+    """
+    Verify every registry entry carries a well-formed ATT&CK technique id. Catches typos
+    like 'T155.003' or '1558.003' when a technique is added. Dependency-free.
+    Raises AssertionError listing any offenders.
+    """
+    bad = [f"{spec.attack} -> {spec.attack_id!r}"
+           for spec in ATTACK_REGISTRY.values()
+           if not is_valid_attack_id(spec.attack_id)]
+    assert not bad, "Malformed MITRE ATT&CK technique id(s) in registry: " + "; ".join(bad)
