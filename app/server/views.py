@@ -349,8 +349,9 @@ def update_deny_list():
             current_user.score = (current_user.score or 0) + points_earned
             current_user.last_score_time = now
             current_user.team.score = (current_user.team.score or 0) + points_earned
-            if current_user.team.last_score_time is None:
-                current_user.team.last_score_time = now
+            # Tie-break consistency: update on every score (same rule as players) so
+            # equal team scores rank by who reached that total first.
+            current_user.team.last_score_time = now
             print("User " + current_user.username + " +" + str(points_earned) + " pts, "
                   + str(len(correct_new)) + " indicators @ " + str(points_per_correct))
 
@@ -706,8 +707,11 @@ def get_score():
             "scores": [t["score"] for t in team_data],
         }
 
-        # Individual leaderboard
-        players = db.session.query(Users).filter(Users.team_id != 1).all()
+        # Individual leaderboard.
+        # Eager-load each player's team to avoid an N+1 query: p.team.name below would
+        # otherwise lazy-load the team once per player on every leaderboard poll.
+        from sqlalchemy.orm import joinedload
+        players = db.session.query(Users).options(joinedload(Users.team)).filter(Users.team_id != 1).all()
         player_data = [
             {
                 "username": p.username,
@@ -857,8 +861,10 @@ def submit_answer():
         current_user.score = (current_user.score or 0) + points_earned
         current_user.last_score_time = now
         current_user.team.score = (current_user.team.score or 0) + points_earned
-        if current_user.team.last_score_time is None:
-            current_user.team.last_score_time = now
+        # Tie-break: equal scores are ranked by who REACHED that score first — i.e. the
+        # most recent scoring event, earlier wins. Update on every score so teams use the
+        # same rule as individual players (previously teams kept only their FIRST score time).
+        current_user.team.last_score_time = now
 
         solve = Solve(
             challenge_id=challenge_id,
@@ -1626,6 +1632,97 @@ def export_round_scores_csv(round_id):
         rows,
         ["username", "team", "score", "challenges_solved"],
     )
+
+
+@main.route("/admin/export/scenario_pdf")
+@roles_required("Admin")
+@login_required
+def export_scenario_pdf():
+    """
+    Download the scenario as a PDF.
+      ?answers=1   -> instructor answer key (answers + threat landscape)
+      (default)    -> player challenge packet (questions only, no answers)
+      ?round_id=N  -> scope challenges to a single round
+    reportlab is imported lazily and guarded, so a missing package surfaces a
+    friendly message instead of breaking the app.
+    """
+    from flask import Response
+    from app.server.modules.reporting.scenario_document import (
+        build_scenario_dict, build_scenario_pdf, PdfDependencyMissing,
+    )
+
+    include_answers = request.args.get("answers", "0") in ("1", "true", "yes", "on")
+    round_id = request.args.get("round_id")
+    try:
+        scenario = build_scenario_dict(round_id=round_id)
+        pdf_bytes = build_scenario_pdf(scenario, include_answers=include_answers)
+    except PdfDependencyMissing as e:
+        flash(str(e), "error")
+        return redirect(url_for("main.manage_challenges"))
+    except Exception as e:
+        print("export_scenario_pdf error: " + str(e))
+        flash("Could not generate scenario PDF: " + str(e), "error")
+        return redirect(url_for("main.manage_challenges"))
+
+    kind = "answer_key" if include_answers else "player_packet"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=kc7_scenario_" + kind + ".pdf"},
+    )
+
+
+@main.route("/admin/preview_scenario")
+@roles_required("Admin")
+@login_required
+def preview_scenario_route():
+    """
+    Dry-run pre-flight: report what the current scenario configs will generate
+    (techniques, ADX tables, active days, approximate volume) WITHOUT running the
+    pipeline. ?format=json for the structured dict; otherwise a plain-text report.
+    """
+    from flask import Response
+    from app.server.modules.preview.scenario_preview import preview_scenario, format_preview_text
+    try:
+        pv = preview_scenario()
+    except Exception as e:
+        print("preview_scenario error: " + str(e))
+        return jsonify(error=str(e)), 500
+    if request.args.get("format") == "json":
+        return jsonify(pv)
+    return Response(format_preview_text(pv), mimetype="text/plain")
+
+
+@main.route("/admin/test_answer")
+@roles_required("Admin")
+@login_required
+def test_answer():
+    """
+    Preview how a submitted answer grades, including normalization/defang, before
+    publishing a challenge. Params:
+      answer=<submitted value>
+      and either  challenge_id=<id>  or  accepted=<;-separated accepted answers>
+    Returns a JSON explanation (normalized forms + which accepted answer matched).
+    """
+    from app.server.modules.scoring.answer_matching import explain_match
+
+    submitted = request.args.get("answer", "")
+    accepted = request.args.get("accepted")
+    challenge_id = request.args.get("challenge_id")
+
+    if challenge_id:
+        try:
+            ch = db.session.get(Challenge, int(challenge_id))
+        except (ValueError, TypeError):
+            return jsonify(error="challenge_id must be an integer"), 400
+        if not ch:
+            return jsonify(error="Challenge not found"), 404
+        accepted = ch.answer
+
+    if accepted is None:
+        return jsonify(error="Provide either challenge_id or accepted"), 400
+
+    return jsonify(explain_match(submitted, accepted))
 
 
 # ---------------------------------------------------------------------------

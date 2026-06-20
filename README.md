@@ -135,6 +135,21 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Import challenges in bulk via CSV upload
 - Global challenges (no round assigned) appear to all players; round-scoped challenges appear only to that round's participants
 
+#### Scenario PDF Export (`/admin/export/scenario_pdf`) 🆕
+- One-click export of the scenario as a polished PDF, generated from the live game data (company profile, the actors in play with their ATT&CK techniques, and the challenge set) — so it never drifts out of sync.
+- Two variants: a **player challenge packet** (questions only) and an **instructor answer key** (`?answers=1`, which adds the accepted answers and a threat-landscape/attribution reference). Answers and the attribution section appear **only** in the instructor key.
+- Scope to a single round with `?round_id=N`.
+- Requires the optional `reportlab` package; if it isn't installed the export shows a friendly "install reportlab" message instead of failing.
+
+#### Scenario Dry-Run Preview (`/admin/preview_scenario`) 🆕
+- A pre-flight that reports what the current scenario will generate **without running the pipeline** — for each actor: the ATT&CK techniques that will fire, the ADX tables they populate, the number of active days, and an approximate event volume; plus the scenario-wide table union.
+- Lets an author sanity-check a scenario (and pair it with config validation) before committing to a full, slow generation run.
+- Plain-text report by default; add `?format=json` for the structured data. Also runnable headlessly: `python -m app.server.modules.preview.scenario_preview`.
+
+#### Answer Tester (`/admin/test_answer`) 🆕
+- Preview how a submitted answer would grade **before** publishing a challenge, including normalization/defang. Returns a JSON explanation: the normalized submitted value, and for each accepted answer its normalized form and whether it matches.
+- Params: `answer=<value>` plus either `challenge_id=<id>` or `accepted=<;-separated answers>`. Example: `?answer=hxxp://bad[.]com/&accepted=bad.com` reports a match against `bad.com`.
+
 #### Manage Rounds (`/admin/rounds`)
 - Create named rounds with a password join code
 - Set and toggle per-round timers independently of the global session timer

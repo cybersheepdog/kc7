@@ -118,3 +118,31 @@ def answer_matches(submitted, accepted_raw, answer_type: str = None) -> bool:
         if normalize_answer(candidate, answer_type) == normalized_submitted:
             return True
     return False
+
+
+def explain_match(submitted, accepted_raw, answer_type: str = None) -> dict:
+    """
+    Like ``answer_matches``, but returns a structured explanation for an admin
+    "test this answer" tool: the normalized submitted value, and for each accepted
+    answer its normalized form and whether it matches. Consistent with
+    ``answer_matches`` (same normalization, same empty-submission guard).
+    """
+    normalized_submitted = normalize_answer(submitted, answer_type)
+    accepted = []
+    matched_form = None
+    for candidate in str(accepted_raw or "").split(";"):
+        candidate = candidate.strip()
+        if not candidate:
+            continue
+        nc = normalize_answer(candidate, answer_type)
+        is_match = (nc == normalized_submitted and normalized_submitted != "")
+        if is_match and matched_form is None:
+            matched_form = candidate
+        accepted.append({"raw": candidate, "normalized": nc, "matches": is_match})
+    return {
+        "submitted": submitted,
+        "normalized_submitted": normalized_submitted,
+        "matched": matched_form is not None,
+        "matched_form": matched_form,
+        "accepted": accepted,
+    }

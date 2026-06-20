@@ -293,11 +293,12 @@ def generate_activity_new(actor: Actor,
         # Generate passive dns
         gen_passive_dns(actor, current_date, num_passive_dns)
 
-        # Send emails
+        # Send emails (phishing, malware delivery, or supply-chain via compromised partners)
         if AttackTypes.PHISHING_VIA_EMAIL.value in actor.get_attacks()\
-        or AttackTypes.MALWARE_VIA_EMAIL.value in actor.get_attacks():
+        or AttackTypes.MALWARE_VIA_EMAIL.value in actor.get_attacks()\
+        or AttackTypes.SUPPLY_CHAIN_VIA_EMAIL.value in actor.get_attacks():
             gen_actor_email(employees,
-                      actor, 
+                      actor,
                       start_date=current_date
             )
 
@@ -317,6 +318,15 @@ def generate_activity_new(actor: Actor,
                 start_date=current_date, 
                 num_employees=random.randint(5, 10),
                 link_type="malware_delivery"
+            )
+
+        # Watering hole attack — credential phishing variant (drive-by to a fake login)
+        if AttackTypes.PHISHING_VIA_WATERING_HOLE.value in actor.get_attacks():
+            actor_stages_watering_hole(
+                actor=actor,
+                start_date=current_date,
+                num_employees=random.randint(5, 10),
+                link_type="phishing"
             )
         
         # Recon activity
