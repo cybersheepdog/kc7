@@ -25,5 +25,5 @@ For training Materials:
 To get started go to http://127.0.0.1:8889/login
 Login username:password -> admin:admin 
     """)
-    application.run(host='10.253.195.21', debug=True, port="8889")
+    application.run(debug=True, port="8889")
 

@@ -65,6 +65,7 @@ def _run_db_migrations():
         "ALTER TABLE game_session ADD COLUMN uses_timer BOOLEAN NOT NULL DEFAULT 0",
         "ALTER TABLE game_session ADD COLUMN end_time DATETIME",
         "ALTER TABLE challenges ADD COLUMN round_id INTEGER REFERENCES game_rounds(id)",
+        "ALTER TABLE game_rounds ADD COLUMN start_time DATETIME",
         "ALTER TABLE users ADD COLUMN fs_uniquifier VARCHAR(64)",
         "ALTER TABLE roles ADD COLUMN description VARCHAR(255)",
         "ALTER TABLE roles ADD COLUMN permissions TEXT",

@@ -56,6 +56,37 @@ def calculate_time_weighted_points(base_points, game_session):
         return base_points
 
 
+def calculate_round_time_weighted_points(base_points, game_round, solved_at=None):
+    """
+    Per-challenge time-weighted scoring within a round's time window.
+
+    Each challenge is scored independently: the earlier within the round
+    window it is answered, the higher the points.
+
+    At t=start_time:  2x base_points (full bonus).
+    At t=end_time:    1x base_points (no bonus).
+    Linear decay in between.
+
+    Falls back to base_points if the round has no timer or no start_time.
+    """
+    try:
+        if not game_round or not game_round.uses_timer:
+            return base_points
+        if not game_round.start_time or not game_round.end_time:
+            return base_points
+        now = solved_at or datetime.now()
+        window_secs = (game_round.end_time - game_round.start_time).total_seconds()
+        if window_secs <= 0:
+            return base_points
+        elapsed_secs = (now - game_round.start_time).total_seconds()
+        fraction = max(0.0, min(1.0, elapsed_secs / window_secs))
+        decay = 1.0 - fraction          # 1.0 at start, 0.0 at end
+        return base_points + int(base_points * decay)
+    except Exception as e:
+        print("calculate_round_time_weighted_points: " + str(e))
+        return base_points
+
+
 def get_malicious_indicators():
     """
     Build and return the complete set of ground-truth malicious indicators
@@ -481,7 +512,7 @@ def delreport():
 @main.route("/teams")
 @login_required
 def teams():
-    team_list = Team.query.all()
+    team_list = Team.query.filter(Team.id != 1).all()
     return render_template("main/teams.html", teams=team_list)
 
 
@@ -515,6 +546,134 @@ def create_team():
         flash("Could not create this team!", "error")
     flash("Added a new team", "success")
     return redirect(url_for("main.manage_teams"))
+
+
+@main.route("/admin/import_teams_csv", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def import_teams_csv():
+    """Admin: bulk-create teams from a CSV file.
+    Expected column (header optional): name
+    Skips teams whose names already exist.
+    """
+    import csv, io
+    try:
+        f = request.files.get("csv_file")
+        if not f or not f.filename:
+            flash("No file selected.", "error")
+            return redirect(url_for("main.manage_teams"))
+
+        stream  = io.StringIO(f.stream.read().decode("utf-8-sig"), newline=None)
+        reader  = csv.reader(stream)
+        added   = 0
+        skipped = 0
+
+        existing = {t.name.lower() for t in Team.query.all()}
+
+        for i, row in enumerate(reader):
+            if not row:
+                continue
+            name = row[0].strip()
+            if not name:
+                continue
+            if i == 0 and name.lower() == "name":
+                continue   # skip header
+            if name.lower() in existing:
+                skipped += 1
+                continue
+            db.session.add(Team(name=name, score=0))
+            existing.add(name.lower())
+            added += 1
+
+        db.session.commit()
+        flash(f"Imported {added} team(s). Skipped {skipped} duplicate(s).", "success")
+    except Exception as e:
+        db.session.rollback()
+        print("import_teams_csv error:", e)
+        flash("CSV import failed: " + str(e), "error")
+    return redirect(url_for("main.manage_teams"))
+
+
+@main.route("/admin/import_users_csv", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def import_users_csv():
+    """Admin: bulk-create users from a CSV file.
+    Expected columns (header optional):
+        username, email, password, team[, role]
+    - team: matched by name (case-insensitive); created if it doesn't exist.
+    - role: 'Admin' or 'Player' (default: Player).
+    Skips rows where username or email already exists.
+    """
+    import csv, io
+    try:
+        f = request.files.get("csv_file")
+        if not f or not f.filename:
+            flash("No file selected.", "error")
+            return redirect(url_for("main.manage_users"))
+
+        stream  = io.StringIO(f.stream.read().decode("utf-8-sig"), newline=None)
+        reader  = csv.reader(stream)
+
+        # Pre-load lookups
+        team_map  = {t.name.lower(): t for t in Team.query.all()}
+        role_map  = {r.name.lower(): r for r in Roles.query.all()}
+        existing_users  = {u.username.lower() for u in Users.query.all()}
+        existing_emails = {u.email.lower() for u in Users.query.all()}
+
+        added   = 0
+        skipped = 0
+
+        for i, row in enumerate(reader):
+            if len(row) < 4:
+                skipped += 1
+                continue
+            cols = [c.strip() for c in row]
+            username, email, password, team_name = cols[:4]
+            role_name = cols[4] if len(cols) >= 5 else "Player"
+
+            # Skip header
+            if i == 0 and username.lower() == "username":
+                continue
+
+            if not username or not email or not password:
+                skipped += 1
+                continue
+            if username.lower() in existing_users or email.lower() in existing_emails:
+                skipped += 1
+                continue
+
+            # Resolve or create team
+            team = None
+            if team_name:
+                key = team_name.lower()
+                if key not in team_map:
+                    new_team = Team(name=team_name, score=0)
+                    db.session.add(new_team)
+                    db.session.flush()   # get the id
+                    team_map[key] = new_team
+                team = team_map[team_name.lower()]
+
+            # Resolve role
+            role = role_map.get(role_name.lower()) or role_map.get("player")
+
+            new_user = Users(username=username, password=password,
+                             email=email, team=team)
+            if role:
+                new_user.roles = [role]
+            db.session.add(new_user)
+
+            existing_users.add(username.lower())
+            existing_emails.add(email.lower())
+            added += 1
+
+        db.session.commit()
+        flash(f"Imported {added} user(s). Skipped {skipped} row(s).", "success")
+    except Exception as e:
+        db.session.rollback()
+        print("import_users_csv error:", e)
+        flash("CSV import failed: " + str(e), "error")
+    return redirect(url_for("main.manage_users"))
 
 
 @main.route("/get_score", methods=["GET"])
@@ -678,10 +837,18 @@ def submit_answer():
                            message="Incorrect answer. Try again!")
 
         # Correct and first solve -- award points
-        game_session  = db.session.get(GameSession, 1)
-        points_earned = calculate_time_weighted_points(challenge.value, game_session)
-
+        # Round challenges: score based on how early within the round window.
+        # Global challenges: score based on global session elapsed time.
         now = datetime.now()
+        if challenge.round_id:
+            _rnd_for_score = db.session.get(GameRound, challenge.round_id)
+            points_earned = calculate_round_time_weighted_points(
+                challenge.value, _rnd_for_score, solved_at=now
+            )
+        else:
+            game_session  = db.session.get(GameSession, 1)
+            points_earned = calculate_time_weighted_points(challenge.value, game_session)
+
         current_user.score = (current_user.score or 0) + points_earned
         current_user.last_score_time = now
         current_user.team.score = (current_user.team.score or 0) + points_earned
@@ -1043,8 +1210,12 @@ def round_rankings(round_id):
 
     from sqlalchemy import func as sqlfunc
     participant_ids = [p.user_id for p in game_round.participants.all()]
-    players = Users.query.filter(Users.id.in_(participant_ids)).all()
+    players = Users.query.filter(
+        Users.id.in_(participant_ids),
+        Users.team_id != 1        # exclude admin team
+    ).all()
 
+    # --- Individual leaderboard ---
     player_data = []
     for p in players:
         round_score = db.session.query(sqlfunc.sum(Solve.points_awarded))\
@@ -1052,7 +1223,6 @@ def round_rankings(round_id):
             .filter(Challenge.round_id == round_id)\
             .filter(Solve.user_id == p.id)\
             .scalar() or 0
-        # tiebreak: first solve time in this round
         first_solve = db.session.query(sqlfunc.min(Solve.solved_at))\
             .join(Challenge, Solve.challenge_id == Challenge.id)\
             .filter(Challenge.round_id == round_id)\
@@ -1060,17 +1230,47 @@ def round_rankings(round_id):
             .scalar()
         player_data.append({
             "username": p.username,
-            "team": p.team.name if p.team else "--",
-            "score": round_score,
+            "team":     p.team.name if p.team else "--",
+            "team_id":  p.team_id,
+            "score":    round_score,
             "first_solve": first_solve.isoformat() if first_solve else "9999",
         })
-
     player_data.sort(key=lambda x: (-x["score"], x["first_solve"]))
+
+    # --- Team leaderboard (aggregate participant scores per team) ---
+    team_scores = {}   # team_id -> {name, score, first_solve}
+    for p in players:
+        if not p.team_id:
+            continue
+        team_name = p.team.name if p.team else "--"
+        if p.team_id not in team_scores:
+            team_scores[p.team_id] = {"name": team_name, "score": 0, "first_solve": "9999"}
+
+        round_score = db.session.query(sqlfunc.sum(Solve.points_awarded))\
+            .join(Challenge, Solve.challenge_id == Challenge.id)\
+            .filter(Challenge.round_id == round_id)\
+            .filter(Solve.user_id == p.id)\
+            .scalar() or 0
+        first_solve = db.session.query(sqlfunc.min(Solve.solved_at))\
+            .join(Challenge, Solve.challenge_id == Challenge.id)\
+            .filter(Challenge.round_id == round_id)\
+            .filter(Solve.user_id == p.id)\
+            .scalar()
+
+        team_scores[p.team_id]["score"] += round_score
+        if first_solve:
+            fs_str = first_solve.isoformat()
+            if fs_str < team_scores[p.team_id]["first_solve"]:
+                team_scores[p.team_id]["first_solve"] = fs_str
+
+    team_data = sorted(team_scores.values(), key=lambda x: (-x["score"], x["first_solve"]))
 
     return render_template(
         "main/round_rankings.html",
         game_round=game_round,
         player_data=player_data,
+        team_data=team_data,
+        current_team=current_user.team.name if current_user.team else None,
     )
 
 
@@ -1142,9 +1342,12 @@ def set_round_timer(round_id):
         if not gr:
             flash("Round not found.", "error")
             return redirect(url_for("main.manage_rounds"))
-        end_time_str = request.form.get("end_time", "").strip()
+        start_time_str = request.form.get("start_time", "").strip()
+        end_time_str   = request.form.get("end_time", "").strip()
         if end_time_str:
             gr.end_time   = datetime.strptime(end_time_str, "%Y-%m-%dT%H:%M")
+            gr.start_time = datetime.strptime(start_time_str, "%Y-%m-%dT%H:%M") \
+                            if start_time_str else datetime.now()
             gr.uses_timer = True
             db.session.commit()
             flash("Timer set for \"" + gr.name + "\" and enabled.", "success")
@@ -1167,6 +1370,9 @@ def toggle_round_timer(round_id):
             flash("Round not found.", "error")
             return redirect(url_for("main.manage_rounds"))
         gr.uses_timer = not bool(gr.uses_timer)
+        # Record start_time when timer is first enabled
+        if gr.uses_timer and not gr.start_time:
+            gr.start_time = datetime.now()
         db.session.commit()
         state = "enabled" if gr.uses_timer else "disabled"
         flash("Timer " + state + " for \"" + gr.name + "\".", "success")

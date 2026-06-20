@@ -341,6 +341,7 @@ class GameRound(AuthBase):
     password   = db.Column(db.String(50),  unique=True, nullable=False)
     created_at = db.Column(db.DateTime,    nullable=False)
     uses_timer = db.Column(db.Boolean,     default=False, nullable=False, server_default="0")
+    start_time = db.Column(db.DateTime,    nullable=True)
     end_time   = db.Column(db.DateTime,    nullable=True)
 
     def __init__(self, name, password):
@@ -348,6 +349,7 @@ class GameRound(AuthBase):
         self.password   = password
         self.created_at = datetime.datetime.now()
         self.uses_timer = False
+        self.start_time = None
         self.end_time   = None
 
     @property

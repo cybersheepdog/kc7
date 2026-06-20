@@ -1,75 +1,121 @@
 {% extends "main/base.html" %}
 {% block body %}
 
-  <!-- Page Heading -->
   <div class="d-sm-flex align-items-center justify-content-between mb-4">
     <h1 class="h3 mb-0 text-gray-800">Manage Teams</h1>
   </div>
 
-    <!-- Content Row -->
-    <div class="row">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for category, message in messages %}
+      <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+        {{ message }}<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+      </div>
+    {% endfor %}{% endif %}
+  {% endwith %}
 
+  <!-- Team List -->
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+      <h6 class="m-0 font-weight-bold text-primary">Current Teams</h6>
+      <span class="badge badge-primary badge-pill">{{ teams|length }} total</span>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-bordered table-hover table-sm mb-0">
+        <thead class="thead-light">
+          <tr>
+            <th>#</th>
+            <th>Team Name</th>
+            <th class="text-center">Members</th>
+            <th class="text-center">Mitigations</th>
+            <th class="text-right">Score</th>
+            <th style="width:8rem;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for team in teams %}
+          <tr>
+            <td>{{ team.id }}</td>
+            <td><strong>{{ team.name }}</strong></td>
+            <td class="text-center">{{ team.members.count() }}</td>
+            <td class="text-center">{{ team._mitigations }}</td>
+            <td class="text-right">{{ team.score }}</td>
+            <td>
+              <form action="/delteam" method="post">
+                <input type="hidden" name="team_id" value="{{ team.id }}">
+                <button type="submit" class="btn btn-danger btn-sm btn-block"
+                        onclick="return confirm('Delete this team?')">
+                  <i class="fas fa-trash mr-1"></i> Delete
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="row">
+
+    <!-- Add single team -->
+    <div class="col-lg-6">
       <div class="card shadow mb-4">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">Current Teams</h6>
+          <h6 class="m-0 font-weight-bold text-primary">Add a New Team</h6>
         </div>
         <div class="card-body">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Team Name</th>
-                <th>Member Count</th>
-                <th>Mitigations</th>
-                <th>Score</th>
-                <th>Delete</th>
-              </tr>
-            </thead>
-              {% for team in teams %}
-              <tr>
-                <td>{{ team.id }}</td>
-                <td>{{ team.name}}</td>
-                <td>{{ team.members.count() }}</td>
-                <td>{{ team._mitigations }}</td>
-                <td>{{ team.score }}</td>
-                <td>
-                  <form action="/delteam" method="post">
-                    <input type="hidden" name="team_id" value="{{ team.id }}">
-                    <input type="submit" class="btn btn-danger btn-block btn-sm"  value="Delete this team"
-                    onclick="return confirm('Are you sure you want to delete this team?')">
-                  </form>
-                </td>
-              </tr>
-              {% endfor %}
-            </table>
+          <form action='/create_team' method="POST">
+            <div class="input-group">
+              <input type="text" class="form-control" name="team_name"
+                     placeholder="Team name" autocomplete="off" required>
+              <div class="input-group-append">
+                <button type="submit" class="btn btn-primary">
+                  <i class="fas fa-plus mr-1"></i> Create Team
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       </div>
-        
-      </div><!-- end of row-->
-    
+    </div>
 
-      <div class="row">
-        <div class="col-md-12">
-          <div class="card shadow mb-4">
-            <div class="card-header py-3">
-                <h6 class="m-0 font-weight-bold text-primary">Add a new team</h6>
-            </div>
-            <div class="card-body">
-              <form action='/create_team' method="POST">
-                <div class="form-group row">
-                  <label class="col-md-3 col-form-label">Team Name: </label>
-                  <div class="col-md-6">
-                    <input type="text" class="form-control" name="team_name" placeholder="Team Name" autocomplete="off"/>
-                  </div>
-                  <div class="col-md-3">
-                    <input type="submit" class="btn btn-primary" value="Create New Team"> 
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
+    <!-- Bulk import teams from CSV -->
+    <div class="col-lg-6">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Bulk Import Teams from CSV</h6>
         </div>
-        
+        <div class="card-body">
+          <p class="text-muted small mb-2">
+            CSV column (header optional): <code>name</code>. One team per row. Duplicates are skipped.
+          </p>
+          <form action="/admin/import_teams_csv" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+              <div class="custom-file">
+                <input type="file" class="custom-file-input" id="teams_csv" name="csv_file" accept=".csv">
+                <label class="custom-file-label" for="teams_csv">Choose CSV file...</label>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success btn-block">
+              <i class="fas fa-upload mr-1"></i> Import Teams
+            </button>
+          </form>
+          <hr>
+          <p class="small text-muted mb-1"><strong>Example:</strong></p>
+          <pre class="small bg-light p-2 rounded">name
+Alpha Team
+Bravo Squad
+Charlie Unit</pre>
+        </div>
       </div>
+    </div>
+
+  </div>
+
+  <script>
+    document.getElementById('teams_csv').addEventListener('change', function() {
+      this.nextElementSibling.textContent = this.files[0] ? this.files[0].name : 'Choose CSV file...';
+    });
+  </script>
 
 {% endblock %}

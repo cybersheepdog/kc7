@@ -129,54 +129,98 @@
     </div>
   </div>
 
-  <!-- Add User Card -->
+  <!-- Add User + CSV Import -->
   <div class="row">
-    <div class="card shadow mb-4 w-100">
-      <div class="card-header py-3">
-        <h6 class="m-0 font-weight-bold text-primary">Add New User</h6>
-      </div>
-      <div class="card-body">
-        <form action="/admin/add_user" method="post">
-          <div class="form-row">
-            <div class="form-group col-md-3">
-              <label class="small font-weight-bold">Username <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" name="username" placeholder="Username" required autocomplete="off">
+
+    <!-- Add single user -->
+    <div class="col-lg-7">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Add New User</h6>
+        </div>
+        <div class="card-body">
+          <form action="/admin/add_user" method="post">
+            <div class="form-row">
+              <div class="form-group col-md-3">
+                <label class="small font-weight-bold">Username <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="username" placeholder="Username" required autocomplete="off">
+              </div>
+              <div class="form-group col-md-3">
+                <label class="small font-weight-bold">Email <span class="text-danger">*</span></label>
+                <input type="email" class="form-control" name="email" placeholder="user@example.com" required autocomplete="off">
+              </div>
+              <div class="form-group col-md-2">
+                <label class="small font-weight-bold">Password <span class="text-danger">*</span></label>
+                <input type="password" class="form-control" name="password" placeholder="Password" required autocomplete="new-password">
+              </div>
+              <div class="form-group col-md-2">
+                <label class="small font-weight-bold">Role</label>
+                <select class="form-control" name="role">
+                  <option value="Player">Player</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+              <div class="form-group col-md-2">
+                <label class="small font-weight-bold">Team</label>
+                <select class="form-control" name="team_id">
+                  <option value="">— No Team —</option>
+                  {% for team in teams %}
+                  <option value="{{ team.id }}">{{ team.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
             </div>
-            <div class="form-group col-md-3">
-              <label class="small font-weight-bold">Email <span class="text-danger">*</span></label>
-              <input type="email" class="form-control" name="email" placeholder="user@example.com" required autocomplete="off">
-            </div>
-            <div class="form-group col-md-2">
-              <label class="small font-weight-bold">Password <span class="text-danger">*</span></label>
-              <input type="password" class="form-control" name="password" placeholder="Password" required autocomplete="new-password">
-            </div>
-            <div class="form-group col-md-2">
-              <label class="small font-weight-bold">Role</label>
-              <select class="form-control" name="role">
-                <option value="Player">Player</option>
-                <option value="Admin">Admin</option>
-              </select>
-            </div>
-            <div class="form-group col-md-2">
-              <label class="small font-weight-bold">Team</label>
-              <select class="form-control" name="team_id">
-                <option value="">— No Team —</option>
-                {% for team in teams %}
-                <option value="{{ team.id }}">{{ team.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          </div>
-          <button type="submit" class="btn btn-success">
-            <i class="fas fa-user-plus mr-1"></i> Create User
-          </button>
-        </form>
+            <button type="submit" class="btn btn-success">
+              <i class="fas fa-user-plus mr-1"></i> Create User
+            </button>
+          </form>
+        </div>
       </div>
     </div>
+
+    <!-- Bulk import users from CSV -->
+    <div class="col-lg-5">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Bulk Import Users from CSV</h6>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-2">
+            CSV columns (header optional): <code>username, email, password, team[, role]</code>
+          </p>
+          <p class="text-muted small mb-3">
+            Teams are matched by name and <strong>created automatically</strong> if they don't exist.
+            Role defaults to <code>Player</code> if omitted. Duplicate usernames/emails are skipped.
+          </p>
+          <form action="/admin/import_users_csv" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+              <div class="custom-file">
+                <input type="file" class="custom-file-input" id="users_csv" name="csv_file" accept=".csv">
+                <label class="custom-file-label" for="users_csv">Choose CSV file...</label>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success btn-block">
+              <i class="fas fa-upload mr-1"></i> Import Users
+            </button>
+          </form>
+          <hr>
+          <p class="small text-muted mb-1"><strong>Example:</strong></p>
+          <pre class="small bg-light p-2 rounded">username,email,password,team,role
+jsmith,jsmith@example.com,pass123,Alpha Team,Player
+alee,alee@example.com,pass456,Bravo Squad,Player
+tadmin,tadmin@example.com,adminpass,admins,Admin</pre>
+        </div>
+      </div>
+    </div>
+
   </div>
 
 
   <script>
+  document.getElementById('users_csv').addEventListener('change', function() {
+    this.nextElementSibling.textContent = this.files[0] ? this.files[0].name : 'Choose CSV file...';
+  });
+
   $('#editUserModal').on('show.bs.modal', function(event) {
     var btn      = $(event.relatedTarget);
     var userId   = btn.data('user-id');
