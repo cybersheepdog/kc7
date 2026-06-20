@@ -94,15 +94,16 @@ def register():
 def reset():
     form = EmailForm()
     if form.validate_on_submit():
-        user = Users.query.filter_by(email=form.email.data).first_or_404()
-
-        subject = "Password reset requested"
-        token = _get_ts().dumps(user.email, salt='recover-key')
-        recover_url = url_for('auth.reset_with_token', token=token, _external=True)
-        html = render_template('email/recover.html', recover_url=recover_url)
-        send_email(subject, user.email, html)
-
-        flash('Check your email for a password reset link', "success")
+        user = Users.query.filter_by(email=form.email.data).first()
+        # Always show the same message whether the email exists or not
+        # (prevents user enumeration)
+        if user:
+            subject = "Password reset requested"
+            token = _get_ts().dumps(user.email, salt='recover-key')
+            recover_url = url_for('auth.reset_with_token', token=token, _external=True)
+            html = render_template('email/recover.html', recover_url=recover_url)
+            send_email(subject, user.email, html)
+        flash('If that email is registered, a reset link has been sent.', "success")
         return redirect(url_for('main.home'))
     return render_template('auth/reset.html', form=form)
 
