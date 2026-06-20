@@ -286,6 +286,15 @@ def known_attack_ids() -> set:
     return {spec.attack_id for spec in ATTACK_REGISTRY.values()}
 
 
+def attacks_for_attack_id(attack_id: str) -> "list[str]":
+    """
+    Reverse lookup: the game attack strings whose MITRE ATT&CK id matches ``attack_id``.
+    Lets an intel pack's list of a real group's technique ids map onto the subset of
+    techniques the game can actually generate (others are simply skipped).
+    """
+    return [spec.attack for spec in ATTACK_REGISTRY.values() if spec.attack_id == attack_id]
+
+
 def assert_attack_ids_wellformed() -> None:
     """
     Verify every registry entry carries a well-formed ATT&CK technique id. Catches typos

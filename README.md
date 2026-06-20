@@ -115,6 +115,8 @@ Scenarios now span the **full Cyber Kill Chain**, so investigations go far beyon
 
 **Campaign mode** 🆕 (optional, `CAMPAIGN_MODE_ENABLED` in `config.py`, off by default): when enabled, an actor's post-compromise stages (Kerberoasting → lateral movement → log clearing → persistence → cloud) all thread through **one pinned compromised host and one C2 IP** per actor, stable across the whole activity window — and they **unfold in order over time**, each stage dwelling a randomized number of working hours after the previous one rather than all happening at once. Together that turns scattered events into a single intrusion players can pivot through and attribute. With it off, each technique picks its own victim/IP and timing as before.
 
+**Infrastructure reuse** 🆕 (optional, `INFRA_REUSE_ENABLED` in `config.py`, off by default): the attribution enabler. When enabled, each actor's IPs are drawn from a small, **stable set of "owned" network ranges** (ASN-like /16 prefixes) seeded deterministically from the actor's name, instead of being scattered randomly across the whole IPv4 space. So the actor's infrastructure clusters in the same recognizable ranges across campaigns and re-runs — a pivotable fingerprint that lets players link two separate intrusions to one actor. (Domains already share stable per-actor TLDs/themes and malware families already reuse their hashes, so IP ranges were the missing piece.) With it off, IPs are random as before.
+
 This activity surfaces across new endpoint and cloud log sources (`SecurityEvents`, `CloudSignInLogs`, `CloudStorageLogs`) alongside the existing tables — see [Simulated Telemetry](#-simulated-telemetry-adx-tables).
 
 ---
@@ -125,9 +127,6 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Start, stop, and restart the game — **Stop** cancels a run mid-generation 🆕
 - Background data generation with a live progress bar and a **streamed progress log** 🆕
 - **Session Timer** — set an end date/time after which no new points can be scored from either indicators or challenges. Enabled and disabled independently of the end time.
-<<<<<<< HEAD
-- **Scenario & Scoring Tools** panel 🆕 — one-click links to the Scenario Preview (dry run), the Scenario PDF exports (player packet / instructor answer key), and the Score Audit.
-=======
 - **Scenario & Scoring Tools** panel 🆕 — one-click links to the Scenario Preview (dry run), the Scenario PDF exports (player packet / instructor answer key), the Score Audit, and the **Run History**.
 - **Run History** (`/admin/run_history`) 🆕 — a log of each data-generation run: when it started/finished, how long it took, success / error / **cancelled**, the scenario window, and **per-table ingested-row counts**. Plain text, or `?format=json`.
 
@@ -135,7 +134,7 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Author the **scenario content** — actor and malware configs — from the browser instead of hand-editing YAML files on disk.
 - Lists every config with a quick summary, and lets you **edit, clone, or delete** them in an in-browser YAML editor. Clone is the fastest way to spin up a new actor from an existing one.
 - **Every save is validated first** (unknown fields with "did you mean?", invalid attack strings, missing/typed fields, attribution/ATT&CK checks) — invalid configs are rejected with inline errors and never written. Filenames are sanitized and writes are confined to the config directories.
->>>>>>> roadmap
+- **Import intel pack** 🆕 — upload a YAML *intel pack* describing a real threat group (name, aliases, MITRE ATT&CK group id `G####`, and the group's technique ids) and the importer maps it onto a validated actor config: it carries the attribution metadata and keeps the subset of techniques the game can actually generate (the rest are noted). **Preview** shows the resulting config; **Import & save** writes it through the validator. Built safely — a pack must declare **provenance**, real indicators are shown **defanged** unless `ALLOW_REAL_INDICATORS` is on, and malware hashes are carried as strings only. Sample pack: `app/game_configs/intel_packs/apt29_emulation.yaml`.
 
 #### Manage Users (`/admin/users`)
 - View all users with their role, team, and score
@@ -153,10 +152,7 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Import challenges in bulk via CSV upload
 - Global challenges (no round assigned) appear to all players; round-scoped challenges appear only to that round's participants
 - **Answer Tester** 🆕 — an inline form to preview how an answer grades (with normalization / defang) before publishing a challenge
-<<<<<<< HEAD
-=======
 - **Auto-generate** 🆕 (`/admin/generate_challenges`) — build a challenge set straight from the scenario's ground truth (malicious IPs, domains, phishing senders, malware families/hashes, attribution + aliases, and MITRE ATT&CK technique IDs). "Preview auto-gen" shows the proposed Q&A; "Auto-generate" creates the non-duplicate ones. Run it after generating a game, since most facts only exist once the data has been produced.
->>>>>>> roadmap
 
 #### Scenario PDF Export (`/admin/export/scenario_pdf`) 🆕
 - One-click export of the scenario as a polished PDF, generated from the live game data (company profile, the actors in play with their ATT&CK techniques, and the challenge set) — so it never drifts out of sync.

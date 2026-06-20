@@ -94,6 +94,34 @@
           </form>
         </div>
       </div>
+
+      <!-- Intel-pack import (#43) -->
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Import intel pack</h6>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small">
+            Upload an <b>intel pack</b> (YAML) describing a real threat group — name, aliases,
+            MITRE ATT&amp;CK group id, and technique ids. The importer keeps the techniques the game
+            can generate, carries the attribution, and produces a <b>validated actor config</b>.
+            Real indicators are shown <b>defanged</b> unless <code>ALLOW_REAL_INDICATORS</code> is on.
+            See <code>app/game_configs/intel_packs/apt29_emulation.yaml</code> for the format.
+          </p>
+          <form method="post" action="{{ url_for('main.import_intel_pack') }}" enctype="multipart/form-data">
+            <div class="form-group">
+              <input type="file" name="pack_file" class="form-control-file" accept=".yaml,.yml" required>
+            </div>
+            <button type="submit" name="action" value="preview" class="btn btn-outline-secondary" formtarget="_blank">
+              <i class="fas fa-eye mr-1"></i> Preview
+            </button>
+            <button type="submit" name="action" value="apply" class="btn btn-success"
+                    onclick="return confirm('Import this pack and save the resulting actor config?');">
+              <i class="fas fa-file-import mr-1"></i> Import &amp; save
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
 
   </div>

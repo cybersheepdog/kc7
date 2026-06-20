@@ -67,6 +67,28 @@ class IP(Base):
     actor_id            = db.Column(db.Integer, db.ForeignKey('actor.id'))
     actor               = db.relationship('Actor', backref=db.backref('ips', lazy='dynamic'))
 
-    def __init__(self, actor): 
+    def __init__(self, actor):
         self.actor = actor
-        self.address = fake.ipv4_public()
+        self.address = self._generate_address(actor)
+
+    @staticmethod
+    def _generate_address(actor) -> str:
+        """
+        Address for this IP. When INFRA_REUSE_ENABLED is on (and this is a non-default
+        actor that generates infrastructure), draw from the actor's stable "owned"
+        network ranges so its IPs cluster recognizably across campaigns (#44). Otherwise
+        — and on any error — fall back to the original fully-random public address, so
+        default behavior is unchanged.
+        """
+        try:
+            from flask import current_app
+            if (not actor.is_default_actor
+                    and getattr(actor, "generates_infrastructure", True)
+                    and current_app.config.get("INFRA_REUSE_ENABLED")):
+                from app.server.modules.infrastructure.infra_reuse import actor_ip_address
+                addr = actor_ip_address(actor)
+                if addr:
+                    return addr
+        except Exception:
+            pass
+        return fake.ipv4_public()

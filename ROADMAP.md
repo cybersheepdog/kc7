@@ -362,8 +362,6 @@ score recompute (#20), anti-cheat surfacing (#26).
     file+field errors before a run), stream per-day/per-actor progress and logs into
     the UI, allow cancel/pause mid-run, and keep a **run history** (timestamp,
     duration, rows ingested per table).
-<<<<<<< HEAD
-=======
     *Status: ✅ done — a `GameRunLog` row is recorded for each generation
     (started/finished, duration, status, error, scenario window, days, **per-table row
     counts**) and surfaced at `/admin/run_history` (+ a Manage Game link). The Manage Game
@@ -372,7 +370,6 @@ score recompute (#20), anti-cheat surfacing (#26).
     running generation** mid-run (the day loop checks `cancel_requested` and records a
     `cancelled` run). Config validation already runs at the start of generation (#1).
     (Pause/resume not implemented — Stop+restart covers it.)*
->>>>>>> roadmap
 
 29. **Scheduled game start/stop.** Auto-launch or end a game at a set time (fits the
     existing scheduled-task support) for unattended events.
@@ -441,15 +438,12 @@ infrastructure inert and never ship real malware binaries.
     network. Keep the existing EICAR-only seed-file invariant (`write_seed_files`); real
     hashes appear only as indicator strings, never as real payloads. Every real IOC
     carries provenance (source + report URL).
-<<<<<<< HEAD
-=======
     *Status: ✅ done — `ALLOW_REAL_INDICATORS` / `ALLOW_REAL_C2_INFRASTRUCTURE` config
     toggles (default OFF); the EICAR seed-file invariant is centralized in
     `safety.py` (`EICAR_TEST_STRING` + `seed_file_content_is_inert()`, `write_seed_files`
     now sources the constant); `defang()` renders real IOCs inertly (round-trips with the
     existing `refang`); `check_safety_invariants()` warns when a toggle is on. Per-IOC
     provenance enforcement arrives with intel-packs (#43).*
->>>>>>> roadmap
 
 ### Actor & TTP modeling
 
@@ -481,12 +475,40 @@ infrastructure inert and never ship real malware binaries.
     **abuse.ch** (ThreatFox / MalwareBazaar / URLhaus), which tag samples by malware
     family and actor. Extends data packs (#4); avoid hard dependence on licensed feeds
     (e.g. VirusTotal).
+    *Status: ✅ Format + importer shipped (`modules/intel_packs/intel_pack.py`). An intel
+    pack is a portable YAML bundle — group name/aliases, ATT&CK group id (`G####`), the
+    group's technique ids, plus historical hashes/indicators with **provenance**. The
+    importer maps the pack onto a validated **actor config**: it carries the attribution
+    metadata (#40) and selects the subset of techniques the game can generate via the
+    registry's ATT&CK reverse lookup (`attacks_for_attack_id`), noting the rest. Safety
+    (#39) is enforced — provenance is **required**, indicators are **defanged** unless
+    `ALLOW_REAL_INDICATORS` is on, hashes are strings only, and the result passes the
+    config validator before it's written. Admin route `/admin/import_intel_pack`
+    (Preview / Import &amp; save) lives on the Manage Scenario page; a sample inert pack
+    is at `app/game_configs/intel_packs/apt29_emulation.yaml`. Follow-up: live ATT&CK/
+    abuse.ch fetch-and-build to auto-populate packs, and feeding pack hashes/indicators
+    into generated telemetry (needs malware-hash injection + infra reuse, #44).*
 
 44. **Actor-consistent infrastructure reuse (the core attribution enabler).** Have each
     actor reuse infrastructure patterns and malware families across campaigns — same ASN
     ranges, TLD/registrar/cert fingerprints, reused hashes — so two intrusions can be
     clustered to one actor. Builds directly on the campaign model (#6) and cross-table
     identity consistency (#7). Without reuse, there is nothing to attribute.
+    *Status: ✅ v1 shipped (opt-in `INFRA_REUSE_ENABLED`). Audit of the generators found
+    domains were already actor-consistent (stable per-actor TLDs + theme words) and
+    malware hashes already reused per family (`assign_hash_to_malware`) — the missing
+    piece was IPs, which were minted fully random (`fake.ipv4_public()`) and so had no
+    network neighborhood to pivot on. `modules/infrastructure/infra_reuse.py` now gives
+    each actor a small, **stable set of "owned" /16 ranges** (ASN-like prefixes) derived
+    deterministically from the actor name, in globally-routable public space; the single
+    IP-creation chokepoint (`IP.__init__`) draws from those ranges when the flag is on,
+    avoiding the actor's existing addresses (collision-safe) and falling back to the
+    original random generator on default actors / flag-off / any error — so behavior is
+    unchanged by default. `actor_infrastructure_fingerprint()` exposes the ranges + TLDs
+    for the preview, auto-challenges, and #45. Campaign C2 selection (#6) inherits the
+    fingerprint for free. Follow-ups: registrar/cert fingerprint reuse, feeding real
+    pack indicators (#43) into the owned ranges, and an "ASN/network range" auto-challenge
+    (#11) + the attribution scoring mechanic (#45).*
 
 45. **Attribution scoring mechanic.** A challenge category whose answer is the threat
     actor name/alias; the normalizer (#21) already accepts aliases via `;`-separated
@@ -591,11 +613,7 @@ Risk is the chance of disturbing existing behavior.
 | 37 | Admin-action audit log | S–M | Low | Underpins #30 and trust |
 | 30 | Manual score adjustments | S | Low | Needs audit log (#37) |
 | 33 | Answer tester | S | Very low | ✅ **Done** — `/admin/test_answer`; `explain_match` shows normalized forms + which accepted answer matched |
-<<<<<<< HEAD
-| 28 | Generation run console & history | M | Low | Streamed logs, cancel, per-table row counts |
-=======
 | 28 | Generation run console & history | M | Low | ✅ **Done** — run history + per-table row counts, streamed progress log, and Stop-to-cancel mid-run |
->>>>>>> roadmap
 | 31 | Edit answers + re-grade | M | Low | Re-grade `AnswerAttempt`; pairs with #21 |
 | 34 | Facilitator analytics dashboard | M | Low | Builds on `Solve`/`AnswerAttempt` |
 | 32 | Hints & challenge gating | M | Low | Schema additions; player-facing |
@@ -606,17 +624,13 @@ Risk is the chance of disturbing existing behavior.
 ### Phase 8 — Real-world intel & attribution (independent track)
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
-<<<<<<< HEAD
-| 39 | Inert-indicator safety controls | S | Low | Guardrail — do first; toggle, provenance, keep EICAR |
-=======
 | 39 | Inert-indicator safety controls | S | Low | ✅ **Done** — safety toggles (off by default), centralized EICAR invariant + `defang()` + advisory checks |
->>>>>>> roadmap
 | 40 | Actor attribution metadata | S | Low | ✅ **Done** — attribution/aliases/group-id/origin/motivation on actor config; validated; surfaced in preview + instructor-key PDF |
 | 46 | Validator extension (ATT&CK / intel refs) | S | Very low | 🚧 ATT&CK-id validation done (registry self-check in pre-flight + `validate_attack_ids`); actor-group/intel-pack refs await #40/#43 |
 | 42 | Real malware families + historical hashes | M | Low | Inert hashes-as-strings only; provenance |
 | 41 | Real TTP tooling & command lines | M | Low | From ATT&CK / Atomic Red Team |
-| 43 | Intel-pack ingestion (ATT&CK STIX + abuse.ch) | M–L | Low | Extends data packs (#4); licensing-aware |
-| 44 | Actor-consistent infra reuse (clustering) | M | Medium | Builds on #6/#7; core attribution enabler |
+| 43 | Intel-pack ingestion (ATT&CK STIX + abuse.ch) | M–L | Low | ✅ Format + importer + admin route + sample pack (provenance-required, defang-safe, validated); live feed-fetch is the follow-up |
+| 44 | Actor-consistent infra reuse (clustering) | M | Medium | ✅ v1: stable per-actor /16 ranges (opt-in `INFRA_REUSE_ENABLED`, collision-safe, fallback-on-error); domains/hashes already consistent. Registrar/cert reuse + ASN challenge are follow-ups |
 | 45 | Attribution scoring mechanic | M | Low | Actor-name answers; aliases via #21 |
 
 ---
@@ -636,12 +650,6 @@ rest of the plan.
 2. **Complete the partially-wired techniques (#14)** — ✅ `watering_hole:phishing` and
    `delivery:supply_chain` are now dispatched; remaining: promote data-exfil /
    hands-on-keyboard to first-class attacks (needs new enum entries).
-<<<<<<< HEAD
-3. **Registry-driven dispatch** — finish #2 by replacing the hardcoded `if`-chain in
-   `generate_activity_new` with a registry loop. *Handle with care:* the email branch
-   collapses `email:phishing` + `email:malware_delivery` into a single `gen_actor_email`
-   call, so the refactor must preserve that to avoid double-sending email.
-=======
 3. **Registry-driven dispatch** — ✅ **done.** The hardcoded `if`-chain in
    `generate_activity_new` is replaced by a single declarative `ATTACK_DISPATCH` table +
    `dispatch_actor_attacks()` loop. The email collapse (`email:phishing` /
@@ -651,7 +659,6 @@ rest of the plan.
    all 16 single attacks, every collapse case, the full set, and 20k random subsets;
    `assert_dispatch_covers_enum()` guards against a forgotten technique. Adding a
    technique is now a one-line table entry.
->>>>>>> roadmap
 
 If realism is the priority instead, the **campaign / kill-chain model (#6)** is the
 larger but higher-impact build, since auto-generated challenges and guides are most

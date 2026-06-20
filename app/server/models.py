@@ -318,8 +318,6 @@ class MitigationAward(AuthBase):
         return '<MitigationAward user=%r indicator=%r>' % (self.user_id, self.indicator)
 
 
-<<<<<<< HEAD
-=======
 class GameRunLog(AuthBase):
     """
     A record of each data-generation run, for facilitator observability — when a game
@@ -350,7 +348,6 @@ class GameRunLog(AuthBase):
         return '<GameRunLog %r %r>' % (self.started_at, self.status)
 
 
->>>>>>> roadmap
 
 ##########################################################
 # Live answer attempt log (all submissions, right or wrong)

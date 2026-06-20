@@ -1819,8 +1819,6 @@ def score_audit():
     return Response(format_reconciliation_text(report), mimetype="text/plain")
 
 
-<<<<<<< HEAD
-=======
 @main.route("/admin/run_history")
 @roles_required("Admin")
 @login_required
@@ -2003,7 +2001,76 @@ def generate_challenges():
     return redirect(url_for("main.manage_challenges"))
 
 
->>>>>>> roadmap
+# ---------------------------------------------------------------------------
+# Intel-pack ingestion (admin) — #43
+# ---------------------------------------------------------------------------
+@main.route("/admin/import_intel_pack", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def import_intel_pack():
+    """
+    Import an uploaded intel pack (YAML). action=preview returns a text preview of the
+    resulting actor config; action=apply saves it via scenario_admin (which validates).
+    Real indicators are defanged unless ALLOW_REAL_INDICATORS is on.
+    """
+    from flask import Response
+    from app.server.modules.intel_packs.intel_pack import import_pack
+    import yaml as _yaml
+
+    f = request.files.get("pack_file")
+    if not f or not f.filename:
+        flash("No intel pack selected.", "danger")
+        return redirect(url_for("main.manage_scenario"))
+    try:
+        text = f.stream.read().decode("utf-8-sig")
+    except Exception as e:
+        flash("Could not read intel pack: %s" % e, "danger")
+        return redirect(url_for("main.manage_scenario"))
+
+    allow_real = bool(current_app.config.get("ALLOW_REAL_INDICATORS"))
+    res = import_pack(text, allow_real=allow_real)
+    if res["errors"]:
+        flash("Intel pack invalid: " + "; ".join(res["errors"]), "danger")
+        return redirect(url_for("main.manage_scenario"))
+
+    cfg = res["actor_config"]
+    if request.form.get("action") == "apply":
+        from app.server.modules.scenario_admin import scenario_admin as _sa
+        name = (cfg.get("name") or "imported") + ".yaml"
+        content = _yaml.safe_dump(cfg, sort_keys=False)
+        errs = _sa.save_file("actor", name, content)
+        if errs:
+            flash("Imported config failed validation: " + "; ".join(errs), "danger")
+            return redirect(url_for("main.manage_scenario"))
+        msg = "Imported intel pack -> actor '%s' (%d techniques)." % (
+            cfg.get("name"), len(cfg.get("attacks", [])))
+        if res["notes"]:
+            msg += " Skipped: " + "; ".join(res["notes"])
+        flash(msg, "success")
+        return redirect(url_for("main.manage_scenario", kind="actor", name=name))
+
+    # preview (text/plain)
+    lines = ["INTEL PACK PREVIEW", "=" * 60, "",
+             "Resulting actor config (YAML):", "",
+             _yaml.safe_dump(cfg, sort_keys=False)]
+    if res["notes"]:
+        lines += ["Notes:"] + ["  - " + n for n in res["notes"]] + [""]
+    if res["warnings"]:
+        lines += ["Warnings:"] + ["  - " + w for w in res["warnings"]] + [""]
+    ind = res.get("indicators") or {}
+    if any(ind.get(k) for k in ("domains", "ips", "urls")):
+        lines += ["Indicators (%s):" % ("REAL" if allow_real else "defanged")]
+        for k in ("domains", "ips", "urls"):
+            if ind.get(k):
+                lines.append("  %s: %s" % (k, ", ".join(ind[k])))
+        lines.append("")
+    if res.get("malware"):
+        lines += ["Malware (hashes are strings only):"]
+        for mw in res["malware"]:
+            lines.append("  %s: %s (%s)" % (mw.get("name"), ", ".join(mw.get("hashes") or []), mw.get("source")))
+    return Response("\n".join(lines), mimetype="text/plain")
+
+
 # ---------------------------------------------------------------------------
 # Malicious indicator seeding (admin)
 # ---------------------------------------------------------------------------

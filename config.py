@@ -96,6 +96,18 @@ class ProductionConfig(BaseConfig):
     # disabled, each technique picks its own victim/IP as before.
     CAMPAIGN_MODE_ENABLED = False
 
+    # --- Actor-consistent infrastructure reuse (off by default) — #44 ---
+    # When enabled, each non-default actor's IPs are drawn from a small, stable set of
+    # "owned" network ranges (ASN-like /16 prefixes) deterministically seeded from the
+    # actor's name, instead of being scattered randomly across the whole IPv4 space.
+    # The result is that an actor's infrastructure clusters in the same recognizable
+    # ranges across campaigns and re-runs — a pivotable fingerprint that lets two
+    # separate intrusions be attributed to one actor. When disabled, IPs are random as
+    # before. Domains (stable per-actor TLDs/themes) and malware hashes (stable per
+    # family) are already actor-consistent. See modules/infrastructure/infra_reuse.py.
+    INFRA_REUSE_ENABLED = False
+    INFRA_REUSE_PREFIX_COUNT = 3
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7

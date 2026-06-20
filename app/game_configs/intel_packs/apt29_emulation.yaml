@@ -1,0 +1,53 @@
+# --------------------------------------------------------------------------
+# Sample intel pack (#43) — emulation of a real threat group for a scenario.
+#
+# SAFETY: indicators here are INERT — documentation/test ranges (RFC 5737) and
+# example.com domains, never live infrastructure. Hashes are illustrative strings.
+# Replace with real *historical* values from open intel (MITRE ATT&CK, abuse.ch)
+# and keep ALLOW_REAL_INDICATORS off unless your IOCs are confirmed inert.
+# --------------------------------------------------------------------------
+pack_name: "APT29 emulation pack"
+source: "MITRE ATT&CK G0016 (Groups) + abuse.ch ThreatFox (illustrative)"
+provenance_url: "https://attack.mitre.org/groups/G0016/"
+
+actor:
+  name: CozyBearEmu
+  attribution: APT29
+  aliases:
+    - Cozy Bear
+    - Midnight Blizzard
+    - Nobelium
+  attack_group_id: G0016
+  origin: "Russia (SVR), per public reporting"
+  motivation: Espionage
+  # Real ATT&CK technique ids the group is reported to use. The importer keeps the
+  # subset the game can generate and notes the rest.
+  attack_ids:
+    - T1566.002     # spearphishing link        -> email:phishing
+    - T1566.001     # spearphishing attachment  -> email:malware_delivery
+    - T1558.003     # kerberoasting             -> identity:kerberoasting
+    - T1021.002     # SMB/admin shares          -> execution:psexec_lateral
+    - T1070.001     # clear windows event logs  -> evasion:log_clearing
+    - T1547.001     # registry run keys         -> persistence:registry_run
+    - T1539         # steal web session cookie  -> cloud:session_hijacking
+    - T1078.004     # cloud accounts (no game impl — will be skipped/noted)
+  activity_start_date: "2023-03-01"
+  activity_end_date: "2023-03-31"
+  activity_start_hour: 9
+  workday_length_hours: 8
+
+# Historical / inert indicators (defanged on import unless ALLOW_REAL_INDICATORS is on)
+indicators:
+  domains:
+    - cozy-update.example.com
+    - sso-portal.example.net
+  ips:
+    - 198.51.100.23      # RFC 5737 documentation range
+    - 203.0.113.45
+
+# Malware families — hashes are strings only (never payloads; seed files stay EICAR)
+malware:
+  - name: wellmess
+    hashes:
+      - "0000000000000000000000000000000000000000000000000000000000000000"
+    source: "abuse.ch MalwareBazaar (illustrative placeholder)"

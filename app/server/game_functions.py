@@ -484,81 +484,8 @@ def generate_activity_new(actor: Actor,
         # Generate passive dns
         gen_passive_dns(actor, current_date, num_passive_dns)
 
-<<<<<<< HEAD
-        # Send emails (phishing, malware delivery, or supply-chain via compromised partners)
-        if AttackTypes.PHISHING_VIA_EMAIL.value in actor.get_attacks()\
-        or AttackTypes.MALWARE_VIA_EMAIL.value in actor.get_attacks()\
-        or AttackTypes.SUPPLY_CHAIN_VIA_EMAIL.value in actor.get_attacks():
-            gen_actor_email(employees,
-                      actor,
-                      start_date=current_date
-            )
-
-        # Malicious Activity; Conduct Password Spray Attack
-        if AttackTypes.PASSWORD_SPRAY.value in actor.get_attacks():
-            actor_password_spray(
-                actor=actor, 
-                start_date=current_date,
-                num_employees=random.randint(5, 50),
-                num_passwords=5
-            )
-
-        # Watering hole attack
-        if AttackTypes.MALWARE_VIA_WATERING_HOLE.value in actor.get_attacks():
-            actor_stages_watering_hole(
-                actor=actor,
-                start_date=current_date, 
-                num_employees=random.randint(5, 10),
-                link_type="malware_delivery"
-            )
-
-        # Watering hole attack — credential phishing variant (drive-by to a fake login)
-        if AttackTypes.PHISHING_VIA_WATERING_HOLE.value in actor.get_attacks():
-            actor_stages_watering_hole(
-                actor=actor,
-                start_date=current_date,
-                num_employees=random.randint(5, 10),
-                link_type="phishing"
-            )
-        
-        # Recon activity
-        if AttackTypes.RECONNAISSANCE_VIA_BROWSING.value in actor.get_attacks():
-            gen_inbound_browsing_activity(actor=actor,
-                                          start_date=current_date,
-                                          num_inbound_browsing_events=random.randint(0,10))
-
-        # Lateral movement & local privilege escalation
-        if AttackTypes.KERBEROASTING.value in actor.get_attacks():
-            actor_kerberoasting(actor=actor, start_date=current_date)
-
-        if AttackTypes.PSEXEC_LATERAL.value in actor.get_attacks():
-            actor_psexec_lateral(actor=actor, start_date=current_date)
-
-        # Defense evasion & discovery
-        if AttackTypes.AUTOMATED_RECON.value in actor.get_attacks():
-            actor_automated_recon(actor=actor, start_date=current_date)
-
-        if AttackTypes.LOG_CLEARING.value in actor.get_attacks():
-            actor_clears_logs(actor=actor, start_date=current_date)
-
-        # Modern cloud infrastructure attacks
-        if AttackTypes.CLOUD_SESSION_HIJACKING.value in actor.get_attacks()\
-        or AttackTypes.CLOUD_TOKEN_THEFT.value in actor.get_attacks():
-            actor_cloud_session_hijacking(actor=actor, start_date=current_date)
-
-        if AttackTypes.CLOUD_EXFIL_VIA_STORAGE.value in actor.get_attacks():
-            actor_cloud_exfil_via_storage(actor=actor, start_date=current_date)
-
-        # Advanced persistence mechanisms
-        if AttackTypes.PERSISTENCE_SCHEDULED_TASK.value in actor.get_attacks():
-            actor_establishes_persistence(actor=actor, start_date=current_date, mechanism="scheduled_task")
-
-        if AttackTypes.PERSISTENCE_REGISTRY_RUN.value in actor.get_attacks():
-            actor_establishes_persistence(actor=actor, start_date=current_date, mechanism="registry_run")
-=======
         # Dispatch the actor's configured attacks (registry-driven; see ATTACK_DISPATCH).
         dispatch_actor_attacks(actor, current_date, employees)
->>>>>>> roadmap
 
 def create_actors() -> None:
     """
