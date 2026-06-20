@@ -1,0 +1,138 @@
+/* ===========================================================================
+   KC7 dark / cyber theme  (opt-in)
+   ---------------------------------------------------------------------------
+   Loaded on every page but scoped entirely under `body.theme-cyber`, so it is
+   inert unless the user opts in (toggle in their profile). The light theme in
+   kc7-custom.css remains the default. Additive — no structure changes.
+   =========================================================================== */
+
+body.theme-cyber {
+  --cy-bg:        #0b1020;   /* page background        */
+  --cy-surface:   #131a2b;   /* cards / panels         */
+  --cy-surface-2: #0f1525;   /* topbar / table heads   */
+  --cy-border:    #243049;
+  --cy-text:      #cdd5e3;
+  --cy-head:      #e7ecf5;
+  --cy-muted:     #8190ab;
+  --cy-accent:    #22d3ee;   /* cyan                   */
+  --cy-accent-2:  #34d399;   /* green                  */
+  background-color: var(--cy-bg);
+  color: var(--cy-text);
+}
+
+/* ---- surfaces ---- */
+body.theme-cyber #content-wrapper,
+body.theme-cyber .bg-light,
+body.theme-cyber .bg-white { background-color: var(--cy-bg) !important; }
+
+body.theme-cyber .card {
+  background-color: var(--cy-surface);
+  box-shadow: 0 0.2rem 1.4rem rgba(0, 0, 0, 0.45);
+}
+body.theme-cyber .card .card-header {
+  background-color: var(--cy-surface);
+  border-bottom: 1px solid var(--cy-border);
+}
+body.theme-cyber .dropdown-menu,
+body.theme-cyber .modal-content,
+body.theme-cyber .list-group-item {
+  background-color: var(--cy-surface);
+  color: var(--cy-text);
+  border-color: var(--cy-border);
+}
+
+/* ---- topbar ---- */
+body.theme-cyber .topbar {
+  background-color: var(--cy-surface-2) !important;
+  border-bottom: 1px solid var(--cy-border);
+}
+body.theme-cyber .topbar .nav-item .nav-link { color: var(--cy-muted); }
+body.theme-cyber .topbar.navbar-light .navbar-nav .nav-item .nav-link { color: var(--cy-muted); }
+body.theme-cyber .topbar #sidebarToggleTop { color: var(--cy-muted); }
+body.theme-cyber .topbar .topbar-divider { border-right-color: var(--cy-border); }
+
+/* ---- text colors ---- */
+body.theme-cyber,
+body.theme-cyber .text-dark,
+body.theme-cyber .text-gray-700,
+body.theme-cyber .text-gray-800,
+body.theme-cyber .text-gray-900 { color: var(--cy-text) !important; }
+body.theme-cyber h1, body.theme-cyber h2, body.theme-cyber h3,
+body.theme-cyber h4, body.theme-cyber h5, body.theme-cyber h6,
+body.theme-cyber .h1, body.theme-cyber .h2, body.theme-cyber .h3,
+body.theme-cyber .h4, body.theme-cyber .h5, body.theme-cyber .h6 { color: var(--cy-head); }
+body.theme-cyber .text-muted, body.theme-cyber .text-gray-500,
+body.theme-cyber .text-gray-600 { color: var(--cy-muted) !important; }
+body.theme-cyber .text-gray-300 { color: #3a455e !important; }
+body.theme-cyber a { color: var(--cy-accent); }
+body.theme-cyber a:hover { color: #67e8f9; }
+
+/* ---- accent (cyan) replaces indigo in cyber mode ---- */
+body.theme-cyber .text-primary { color: var(--cy-accent) !important; }
+body.theme-cyber .btn-primary {
+  background-color: #0e7490;
+  border-color: #0e7490;
+  color: #ecfeff;
+}
+body.theme-cyber .btn-primary:hover,
+body.theme-cyber .btn-primary:focus,
+body.theme-cyber .btn-primary:active {
+  background-color: #0891b2 !important;
+  border-color: #0891b2 !important;
+}
+body.theme-cyber .btn-outline-primary { color: var(--cy-accent); border-color: #155e75; }
+body.theme-cyber .btn-outline-primary:hover { background-color: #0e7490; border-color: #0e7490; color: #ecfeff; }
+body.theme-cyber .border-left-primary { border-left-color: var(--cy-accent) !important; }
+body.theme-cyber .progress { background-color: #1c2740; }
+body.theme-cyber .progress-bar { background-color: var(--cy-accent); }
+body.theme-cyber .badge-primary { background-color: #0e7490; }
+
+/* ---- sidebar: a touch of neon ---- */
+body.theme-cyber .sidebar-dark .sidebar-brand {
+  font-family: "Consolas", "Courier New", monospace;
+  color: var(--cy-accent);
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
+}
+body.theme-cyber .sidebar-dark .nav-item.active .nav-link { border-left-color: var(--cy-accent); }
+body.theme-cyber .sidebar-dark .nav-item.active .nav-link i { color: var(--cy-accent); }
+
+/* ---- tables ---- */
+body.theme-cyber .table { color: var(--cy-text); }
+body.theme-cyber .table thead th,
+body.theme-cyber .table .thead-light th {
+  background-color: var(--cy-surface-2);
+  color: var(--cy-muted);
+  border-bottom: 2px solid var(--cy-border);
+}
+body.theme-cyber .table td, body.theme-cyber .table th { border-top-color: var(--cy-border); }
+body.theme-cyber .table-hover tbody tr:hover {
+  background-color: rgba(34, 211, 238, 0.07);
+  color: var(--cy-head);
+}
+
+/* ---- forms ---- */
+body.theme-cyber .form-control {
+  background-color: var(--cy-surface-2);
+  border-color: var(--cy-border);
+  color: var(--cy-head);
+}
+body.theme-cyber .form-control:focus {
+  background-color: var(--cy-surface-2);
+  border-color: var(--cy-accent);
+  box-shadow: 0 0 0 0.2rem rgba(34, 211, 238, 0.18);
+  color: var(--cy-head);
+}
+body.theme-cyber .form-control::placeholder { color: #5b6985; }
+body.theme-cyber .custom-control-label { color: var(--cy-text); }
+
+/* ---- misc ---- */
+body.theme-cyber hr,
+body.theme-cyber .border-bottom,
+body.theme-cyber .border-top { border-color: var(--cy-border) !important; }
+body.theme-cyber .badge-light { background-color: #1c2740; color: var(--cy-text); }
+body.theme-cyber .text-white-50 { color: rgba(255, 255, 255, 0.5) !important; }
+body.theme-cyber code { color: var(--cy-accent-2); background-color: #0f1525; }
+body.theme-cyber .footer.sticky-footer,
+body.theme-cyber footer.sticky-footer { background-color: var(--cy-surface-2); }
+body.theme-cyber .footer.sticky-footer .copyright,
+body.theme-cyber footer .copyright { color: var(--cy-muted); }

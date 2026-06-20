@@ -19,6 +19,11 @@
   <!-- Custom styles for this template-->
   <link href="{{ url_for('static', filename='css/sb-admin-2.min.css') }}" rel="stylesheet">
 
+  <!-- KC7 theme refresh (additive overrides; loaded after the base theme) -->
+  <link href="{{ url_for('static', filename='css/kc7-custom.css') }}" rel="stylesheet">
+  <!-- KC7 optional dark/cyber theme (inert unless body has .theme-cyber) -->
+  <link href="{{ url_for('static', filename='css/kc7-dark.css') }}" rel="stylesheet">
+
    <!-- Bootstrap core JavaScript-->
   <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
@@ -73,7 +78,7 @@
   </script>
 </head>
 
-<body id="page-top">
+<body id="page-top" class="{{ 'theme-cyber' if request.cookies.get('kc7_theme') == 'cyber' else '' }}">
 
   <!-- Page Wrapper -->
   <div id="wrapper">

@@ -29,6 +29,8 @@ from app.server.modules.attacks.attack_registry import (
     is_known_attack,
     all_attack_strings,
     get_spec,
+    is_valid_attack_id,
+    assert_attack_ids_wellformed,
 )
 
 
@@ -37,14 +39,36 @@ class ConfigValidationError(Exception):
     pass
 
 
+def validate_attack_ids(ids, source: str = "config") -> "list[str]":
+    """
+    Validate a list of MITRE ATT&CK technique ids (e.g. for a future actor-declared
+    `attack_ids` / emulated-technique field). Returns a list of error strings.
+    Ready for the attribution work (#40); not yet wired to any config field.
+    """
+    errors = []
+    if ids is None:
+        return errors
+    if not isinstance(ids, list):
+        return [f"{source}: 'attack_ids' should be a list, got {type(ids).__name__}"]
+    for tid in ids:
+        if not isinstance(tid, str) or not is_valid_attack_id(tid):
+            errors.append(f"{source}: '{tid}' is not a valid MITRE ATT&CK technique id "
+                          f"(expected like T1566 or T1558.003)")
+    return errors
+
+
 # Fields that should be lists when present (shared across config types)
 _LIST_FIELDS = {
     "attacks", "domain_themes", "sender_themes", "subjects", "tlds", "file_names",
     "file_extensions", "malware", "recon_search_terms", "watering_hole_domains",
     "watering_hole_target_roles", "sender_domains", "working_days",
     "post_exploit_commands", "partners", "filenames", "paths", "recon_processes",
-    "c2_processes",
+    "c2_processes", "aliases",
 }
+# Attribution fields that should be plain strings when present
+_STRING_FIELDS = {"attribution", "attack_group_id", "origin", "motivation"}
+# A well-formed MITRE ATT&CK *group* id, e.g. G0016
+_ATTACK_GROUP_PATTERN = __import__("re").compile(r"^G\d{4}$")
 # Fields that should be ints when present
 _INT_FIELDS = {
     "activity_start_hour", "workday_length_hours", "effectiveness",
@@ -93,6 +117,9 @@ def _check_types(config: dict) -> "list[str]":
             # bool is a subclass of int — reject it explicitly for int fields
             if not isinstance(value, int) or isinstance(value, bool):
                 errors.append(f"field '{key}' should be a whole number, got {type(value).__name__}")
+        elif key in _STRING_FIELDS:
+            if value is not None and not isinstance(value, str):
+                errors.append(f"field '{key}' should be text, got {type(value).__name__}")
         elif key in _DATE_FIELDS:
             if not isinstance(value, str):
                 errors.append(f"field '{key}' should be a date string 'YYYY-MM-DD', got {type(value).__name__}")
@@ -156,6 +183,12 @@ def validate_actor_config(config: dict, source: str = "actor", actor_cls=None) -
                         f"attack '{attack}' requires a non-empty '{rf}' field on the actor"
                     )
 
+    # Attribution metadata (#40): validate the MITRE ATT&CK *group* id format if present
+    group_id = config.get("attack_group_id")
+    if group_id and not _ATTACK_GROUP_PATTERN.match(str(group_id)):
+        errors.append(f"attack_group_id '{group_id}' is not a valid MITRE ATT&CK group id "
+                      f"(expected like G0016)")
+
     return [f"{source}: {e}" for e in errors]
 
 
@@ -204,6 +237,22 @@ def validate_all_game_configs(
             return yaml.safe_load(fh)
 
     errors = []
+
+    # Registry self-checks (fail fast if the attack registry itself is malformed —
+    # e.g. a new technique was added with a typo'd MITRE ATT&CK id, or the registry and
+    # the AttackTypes enum drifted out of sync).
+    try:
+        assert_attack_ids_wellformed()
+    except AssertionError as e:
+        errors.append(f"attack_registry: {e}")
+    try:
+        from app.server.modules.attacks.attack_registry import assert_registry_matches_enum
+        assert_registry_matches_enum()
+    except AssertionError as e:
+        errors.append(f"attack_registry: {e}")
+    except Exception:
+        # AttackTypes import problems shouldn't abort config validation
+        pass
 
     # Company
     if os.path.exists(company_path):

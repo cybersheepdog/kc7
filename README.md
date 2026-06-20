@@ -98,6 +98,9 @@ Players join named rounds using a password code. Each round has its own scoped c
 #### Leaderboard
 The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams and Players tabs. Rankings are sorted by score with tie-breaking by earliest score time.
 
+#### Appearance / Theme 🆕
+The app ships with a refreshed light theme by default. From their **profile page**, each user can toggle between the **Default (Light)** look and a **Cyber (Dark)** SOC-style theme (dark surfaces, cyan accent, monospace touches). The choice is remembered via a cookie and applied across every page — server-side, so there's no flash on load. It's a presentation-only override (a `theme-cyber` body class enabling `kc7-dark.css`); no game logic or data is affected.
+
 #### Expanded Threat Coverage 🆕
 Scenarios now span the **full Cyber Kill Chain**, so investigations go far beyond the initial phishing email. Players hunt adversaries through:
 
@@ -118,6 +121,7 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Start, stop, and restart the game
 - Background data generation with live progress bar
 - **Session Timer** — set an end date/time after which no new points can be scored from either indicators or challenges. Enabled and disabled independently of the end time.
+- **Scenario & Scoring Tools** panel 🆕 — one-click links to the Scenario Preview (dry run), the Scenario PDF exports (player packet / instructor answer key), and the Score Audit.
 
 #### Manage Users (`/admin/users`)
 - View all users with their role, team, and score
@@ -134,6 +138,27 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Edit and delete challenges inline via modal
 - Import challenges in bulk via CSV upload
 - Global challenges (no round assigned) appear to all players; round-scoped challenges appear only to that round's participants
+- **Answer Tester** 🆕 — an inline form to preview how an answer grades (with normalization / defang) before publishing a challenge
+
+#### Scenario PDF Export (`/admin/export/scenario_pdf`) 🆕
+- One-click export of the scenario as a polished PDF, generated from the live game data (company profile, the actors in play with their ATT&CK techniques, and the challenge set) — so it never drifts out of sync.
+- Two variants: a **player challenge packet** (questions only) and an **instructor answer key** (`?answers=1`, which adds the accepted answers and a threat-landscape/attribution reference). Answers and the attribution section appear **only** in the instructor key.
+- Scope to a single round with `?round_id=N`.
+- Requires the optional `reportlab` package; if it isn't installed the export shows a friendly "install reportlab" message instead of failing.
+
+#### Scenario Dry-Run Preview (`/admin/preview_scenario`) 🆕
+- A pre-flight that reports what the current scenario will generate **without running the pipeline** — for each actor: the ATT&CK techniques that will fire, the ADX tables they populate, the number of active days, and an approximate event volume; plus the scenario-wide table union.
+- Lets an author sanity-check a scenario (and pair it with config validation) before committing to a full, slow generation run.
+- Plain-text report by default; add `?format=json` for the structured data. Also runnable headlessly: `python -m app.server.modules.preview.scenario_preview`.
+
+#### Score Audit (`/admin/score_audit`) 🆕
+- A non-destructive reconciliation that recomputes each player's and team's totals from the source-of-truth records — **challenge** points from `Solve` plus **indicator** points from `MitigationAward` — and compares them to the stored running totals, to surface any desync (a deleted solve, a changed challenge value, a corrected answer).
+- Plain-text table by default; `?format=json` for structured data. A **negative delta** always flags a real desync. Indicator awards are now recorded per submission, so for games run since that change the recompute is **exact** (any non-zero delta is a desync); for older games a positive delta just reflects unrecorded historical indicator points.
+- Read-only by default. Add `?apply=1` to perform a **destructive rebuild**: overwrite every player's and team's stored score and last-score time with the values recomputed from the `Solve` + `MitigationAward` records (use after editing/deleting challenges or answers to resync standings). It returns the list of changes applied.
+
+#### Answer Tester (`/admin/test_answer`) 🆕
+- Preview how a submitted answer would grade **before** publishing a challenge, including normalization/defang. Returns a JSON explanation: the normalized submitted value, and for each accepted answer its normalized form and whether it matches.
+- Params: `answer=<value>` plus either `challenge_id=<id>` or `accepted=<;-separated answers>`. Example: `?answer=hxxp://bad[.]com/&accepted=bad.com` reports a match against `bad.com`.
 
 #### Manage Rounds (`/admin/rounds`)
 - Create named rounds with a password join code
@@ -199,6 +224,8 @@ Available techniques, grouped by kill-chain phase, with their MITRE ATT&CK mappi
 
 > These technique strings, their ATT&CK mappings, and the log tables each one writes are defined centrally in `app/server/modules/attacks/attack_registry.py` — the single source of truth used for validation and documentation.
 
+Actors can also carry **attribution metadata** 🆕 for attribution exercises: `attribution` (group name), `aliases`, `attack_group_id` (MITRE `G####`, format-validated), `origin`, and `motivation`. These are validated at startup and surfaced in the scenario preview and the **instructor-key** PDF (never the player packet), so analysts can be asked to identify the actor from its TTPs. They're config/display metadata — no database schema change.
+
 #### Scenario Config Validation 🆕
 When a game starts, every actor / company / malware YAML is validated **before any Azure connection is made**. If a config has a problem, generation stops immediately with a clear, aggregated message naming the file and field — instead of failing deep inside data generation. It catches:
 
@@ -206,6 +233,7 @@ When a game starts, every actor / company / malware YAML is validated **before a
 - Invalid `attacks:` entries — e.g. `remote_exploit` instead of a real technique string — again with a suggestion.
 - Missing required fields and wrong value types (a date that isn't `YYYY-MM-DD`, an `attacks` value that isn't a list, etc.).
 - Hard cross-references — a watering-hole technique with no `watering_hole_domains`, or a `malware:` name with no matching malware config.
+- Registry integrity — the attack registry self-checks that it stays in sync with the `AttackTypes` enum and that every technique carries a well-formed MITRE ATT&CK id (so a typo'd id fails fast).
 
 Validation is dependency-free and additive: valid configs behave exactly as before.
 

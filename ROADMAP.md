@@ -156,23 +156,34 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
     - **Depends on:** validation (#1), registry (#2), content packs (#4), GUI (#3),
       auto-challenges (#11), auto-guide (#12).
 
+47. **Scenario PDF export (admin).** The PDF deliverable form of #12: an admin export
+    that assembles the scenario framing (company, actors + their ATT&CK techniques from
+    the registry, timeline) and the challenge set into a polished PDF, in two variants —
+    a **player packet** (no answers) and an **instructor answer key** (with answers, and
+    the reveal pivot once #11 lands). Renders with a pure-Python library
+    (`fpdf2`/`reportlab`), lazy-imported and guarded so a missing package can't break the
+    app. Mirrors the existing CSV export routes; options for round scope, include/exclude
+    answers, and grouping by category or kill-chain phase. Also retires the stale
+    `summary.txt` narrative by generating it from live config.
+
 ---
 
 ## Engine completeness & enhancements (from code audit)
 
 14. **Complete the partially-wired techniques.** Several techniques already have
     generators or primitives but aren't first-class dispatched attacks:
-    - `watering_hole:phishing` is defined in `AttackTypes` but never dispatched —
-      the watering-hole handler is only ever called with `link_type="malware_delivery"`.
-    - `delivery:supply_chain` only injects compromised partner addresses inside
-      `Actor.gen_sender_addresses`; it has no dispatch branch of its own.
-    - Hands-on-keyboard post-exploitation and email/data exfiltration exist only as
-      follow-ons to a successful email-malware detonation, not as standalone
-      techniques an author can assign directly.
+    - ✅ `watering_hole:phishing` — **now dispatched** in `generate_activity_new`
+      (calls `actor_stages_watering_hole(link_type="phishing")`, a drive-by to a fake
+      login that routes through the credential-capture trigger).
+    - ✅ `delivery:supply_chain` — **now triggers email on its own** (added to the email
+      dispatch gate), so a supply-chain-only actor sends from compromised partner
+      addresses instead of nothing.
+    - ⬜ Hands-on-keyboard post-exploitation and email/data exfiltration still exist only
+      as follow-ons to a successful email-malware detonation. Promoting them to
+      standalone techniques needs new `AttackTypes` entries + registry specs + dispatch.
 
-    Finishing these is low-effort and additive, and pairs naturally with the attack
-    registry (#2). *Benefit: completes the documented technique menu with no new
-    infrastructure.*
+    *Benefit: completes the documented technique menu with no new infrastructure. Two of
+    three done; the last needs new enum entries so it's grouped with future technique work.*
 
 15. **Per-technique detection fidelity.** The engine already models alert
     true/false-positive rates (`TP_RATE_HOST_ALERTS`, `FP_RATE_*`, etc.). Extend this
@@ -218,24 +229,35 @@ Grounded in the current scoring path (`submit_answer`, `update_deny_list`,
 
 ### Correctness (bug fixes — do first)
 
-18. **Team double-credit fix.** `Solve` is unique per `(challenge_id, user_id)`, but
-    `submit_answer` adds to `current_user.team.score` on every first-per-*user* solve —
-    so two members of the same team solving the same challenge credit the team twice.
-    Credit a team at most once per challenge. *Note: this changes results in any
-    multi-member-team event, and there's a design choice — does a later teammate still
-    earn individual points? Confirm before shipping.*
+18. **Team double-credit — resolved by decision (no change).** `Solve` is unique per
+    `(challenge_id, user_id)`, and `submit_answer` adds to `current_user.team.score` on
+    every first-per-*user* solve, so two members solving the same challenge credit the
+    team twice. **Owner decision: this is intended** — every correct solve earns points
+    for both the individual and the team, and a team's total is the sum of its members'
+    solves. Not treated as a bug; no change shipped. *If redundant-solve inflation
+    becomes a concern later, the option remains to credit the team once per challenge
+    while still awarding the individual.*
 
 19. **Consistent tie-break timestamps.** Player `last_score_time` updates on every
     score; `team.last_score_time` is only set once (when `None`). `/get_score`
     tie-breaks both ascending, so players are ranked by *most recent* score and teams
     by *first* score. Pick one rule (CTF convention: earliest to reach the current
-    total wins) and apply it to both.
+    total wins) and apply it to both. *Status: ✅ done — `submit_answer` and
+    `update_deny_list` now set `team.last_score_time = now` on every score, matching the
+    player rule.*
 
 20. **Recompute scores from source of truth.** Totals are denormalized counters on
     `Users`/`Team` with no way to rebuild them. `Solve.points_awarded` and
     `AnswerAttempt` already log everything, so add a recalculate-from-records function
     (and ideally derive the board from records) so corrected answers / deleted solves /
-    changed challenge values can't silently desync standings.
+    changed challenge values can't silently desync standings. *Status: 🚧 a
+    **non-destructive reconciliation** ships at `/admin/score_audit` — it recomputes
+    challenge points from `Solve` **plus indicator points from `MitigationAward`** and
+    flags desync (negative delta). The indicator-award gap is now closed: a
+    `MitigationAward` row is written for every correct indicator (the indicator
+    equivalent of `Solve`), so the recompute is **exact for games run since**. The
+    destructive **rebuild** also shipped: `?apply=1` overwrites every score and
+    `last_score_time` from the records (`compute_rebuild`). #20 complete.*
 
 ### Answer matching
 
@@ -280,7 +302,147 @@ Grounded in the current scoring path (`submit_answer`, `update_deny_list`,
 
 27. **Fix `/get_score` N+1 + cache.** It loads all users and touches `p.team.name` per
     row (lazy load per player) on every poll. Eager-load/aggregate and cache a few
-    seconds before adding auto-refresh load.
+    seconds before adding auto-refresh load. *Status: 🚧 N+1 fixed —
+    `joinedload(Users.team)` eliminates the per-player team query; the short cache is
+    intentionally deferred until live auto-refresh (#24) actually adds poll load.*
+
+---
+
+## Admin & operations
+
+Complements the GUI that already exists (users, teams, challenges, rounds, indicators,
+ADX config, live answer feed). These fill the remaining gaps: observing/controlling
+generation, operating the scoreboard, facilitator analytics, multi-event lifecycle,
+and ops hardening. Several adjacent admin needs are already tracked elsewhere —
+scenario authoring GUI (#3), dry-run preview (#5), auto-generated challenges (#11),
+score recompute (#20), anti-cheat surfacing (#26).
+
+### Generation control & observability
+
+28. **Generation run console.** Today it's start/stop/restart with a progress bar and
+    console `print`s. Add a "Validate configs" button (surface the validator's
+    file+field errors before a run), stream per-day/per-actor progress and logs into
+    the UI, allow cancel/pause mid-run, and keep a **run history** (timestamp,
+    duration, rows ingested per table).
+
+29. **Scheduled game start/stop.** Auto-launch or end a game at a set time (fits the
+    existing scheduled-task support) for unattended events.
+
+### Scoreboard operations
+
+30. **Manual score adjustments.** Award bonus/penalty points or correct a score from the
+    admin UI, written through an audit trail (see #37).
+
+31. **Edit accepted answers + re-grade.** Let an admin fix a challenge's accepted answers
+    and re-grade past `AnswerAttempt`s so early submissions aren't unfairly marked wrong.
+    Pairs with answer normalization (#21).
+
+### Challenge tooling
+
+32. **Hints & gating.** Optional hints with a point cost, timed challenge unlocks, and
+    prerequisite chains (a challenge unlocks after another is solved).
+
+33. **Answer tester.** A "test this answer" control so an author can confirm a question
+    grades correctly (including normalization/alternates) before publishing.
+
+### Facilitator analytics
+
+34. **Analytics dashboard.** Beyond the live feed: score-over-time per team, solve rates
+    by challenge/category/ATT&CK phase, difficulty calibration (challenges nobody solves),
+    engagement (active vs. idle players), and ADX ingestion health (queue depth, errors).
+
+### Lifecycle & multi-event
+
+35. **Multiple concurrent scenarios.** Today it's effectively one company and one game
+    session (`Company.query.first()`, `GameSession` id=1). Support parallel
+    events/scenarios plus a scenario template library (save/clone a whole scenario).
+
+36. **Reset / archive / export a game.** One-click reset, archive a finished event, and
+    export full game state (scores, solves, configs) for records or replay.
+
+### Ops hardening
+
+37. **Admin-action audit log.** Record privileged actions (score edits, config changes,
+    user/role changes, game start/stop) for accountability.
+
+38. **Access & resilience.** Force-change the default `admin`/`admin` password on first
+    login, add finer roles (read-only **facilitator/observer**, **grader**) alongside
+    Admin/Player, and provide DB + config backup/restore.
+
+---
+
+## Real-world intel & attribution
+
+Turn fictitious actors (BluePhoenix, MarketMasters) into emulations of real threat
+groups so analysts can perform **attribution** — clustering intrusions by an actor's
+techniques, tooling, malware families, and infrastructure habits. Builds on the
+ATT&CK tagging already in the registry, data packs (#4), the campaign/identity work
+(#6/#7), and answer normalization (#21).
+
+**Guiding constraint:** realism for attribution comes from *pattern consistency*, not
+from shipping live IOCs. Use real TTPs and real *historical* hashes, but keep
+infrastructure inert and never ship real malware binaries.
+
+### Safety guardrails (do first — non-negotiable)
+
+39. **Inert indicators & no live infrastructure.** A config toggle controls whether
+    actor infrastructure is *synthetic but modeled* on the real actor (TLDs, registrars,
+    hosting ASNs, naming/cert patterns) or drawn from *historical / sinkholed / defanged*
+    real indicators — never live C2 a player could browse to or blocklist on a real
+    network. Keep the existing EICAR-only seed-file invariant (`write_seed_files`); real
+    hashes appear only as indicator strings, never as real payloads. Every real IOC
+    carries provenance (source + report URL).
+
+### Actor & TTP modeling
+
+40. **Actor attribution metadata.** Extend actor configs with group name + aliases
+    (e.g. "APT29 / Cozy Bear / Midnight Blizzard"), ATT&CK Group ID (`G####`), suspected
+    origin, and motivation, plus the ATT&CK techniques that group actually uses.
+    *Status: ✅ done — actor configs accept `attribution`, `aliases`, `attack_group_id`
+    (validated as `G####`), `origin`, and `motivation`, with **no DB schema change** (the
+    metadata is read from the YAML by the validator, preview, and PDF rather than stored
+    on the `Actor` table). The techniques the group uses are derived from the actor's
+    `attacks` via the registry. Demonstrated on BluePhoenix/MarketMasters; surfaced in
+    the scenario preview and the instructor-key PDF (excluded from the player packet).
+    This also unblocks the actor-side of #46 — `attack_group_id` format is now validated.*
+
+41. **Real TTP tooling & command lines.** Populate `post_exploit_commands` and the
+    malware `recon_processes`/`c2_processes` with the emulated group's real tooling and
+    command-line patterns, sourced from ATT&CK and Atomic Red Team.
+
+42. **Real malware families + historical hashes.** Replace fictitious families with real
+    ones per actor; seed `malware.hashes` with genuine open-intel sample hashes (they
+    flow straight into `get_malicious_indicators()` as correct answers), each with
+    provenance. Strings only — never real binaries.
+
+### Sourcing, clustering & scoring
+
+43. **Intel-pack ingestion.** A content-pack format + importer that maps actor → ATT&CK
+    group + techniques + tooling + indicator templates + historical hashes. Built from
+    open-licensed sources: **MITRE ATT&CK** STIX (Groups `G####`, Software `S####`) and
+    **abuse.ch** (ThreatFox / MalwareBazaar / URLhaus), which tag samples by malware
+    family and actor. Extends data packs (#4); avoid hard dependence on licensed feeds
+    (e.g. VirusTotal).
+
+44. **Actor-consistent infrastructure reuse (the core attribution enabler).** Have each
+    actor reuse infrastructure patterns and malware families across campaigns — same ASN
+    ranges, TLD/registrar/cert fingerprints, reused hashes — so two intrusions can be
+    clustered to one actor. Builds directly on the campaign model (#6) and cross-table
+    identity consistency (#7). Without reuse, there is nothing to attribute.
+
+45. **Attribution scoring mechanic.** A challenge category whose answer is the threat
+    actor name/alias; the normalizer (#21) already accepts aliases via `;`-separated
+    forms. Players attribute from TTP + indicator overlap, then corroborate against the
+    referenced report.
+
+46. **Validator extension.** Grow the config validator (#1) to check that an actor's
+    declared ATT&CK group/technique IDs exist and that intel-pack references resolve.
+    *Status: 🚧 ATT&CK technique-id validation shipped — the registry now self-validates
+    that every technique carries a well-formed MITRE id (`assert_attack_ids_wellformed`,
+    wired into the validation pre-flight so a typo'd id fails fast), and a reusable
+    `validate_attack_ids()` helper is ready for actor-declared techniques. The actor
+    ATT&CK-group and intel-pack reference checks await the attribution metadata (#40) and
+    intel-packs (#43).*
 
 ---
 
@@ -313,8 +475,8 @@ Risk is the chance of disturbing existing behavior.
 | 1 | Config validation + clear errors | S–M | Very low | ✅ **Done** — validates before ADX; clear file+field errors |
 | 2 | Attack registry | M | Low | ✅ **Done** — single source of truth; enables 3, 9, 11, 12 |
 | 9 | ATT&CK tagging on attacks | S | Very low | ✅ **Done** — ATT&CK id/name per attack in the registry |
-| 5 | Dry-run preview | S | Very low | Extends `ADX_DEBUG_MODE`; registry gives expected tables |
-| 14 | Complete partially-wired techniques | S | Very low | Finish `watering_hole:phishing`; promote supply-chain, exfil, hands-on-keyboard |
+| 5 | Dry-run preview | S | Very low | ✅ **Done** — `/admin/preview_scenario` + CLI; registry-driven tables/active-days/volume (execution-based row counts a future add-on) |
+| 14 | Complete partially-wired techniques | S | Very low | 🚧 `watering_hole:phishing` + supply-chain dispatch ✅; standalone exfil/hands-on-keyboard pending (need new enums) |
 
 ### Phase 2 — Auto-generated content
 | # | Item | Effort | Risk | Notes |
@@ -336,6 +498,7 @@ Risk is the chance of disturbing existing behavior.
 |---|------|--------|------|-------|
 | 3 | "Manage Scenario" admin GUI (+ clone) | M–L | Low | Mirror challenges editor |
 | 12 | Auto-generated game guide & instructor key | M | Low | From config; ends `summary.txt` drift |
+| 47 | Scenario PDF export (admin) | M | Low | ✅ **Done** — `/admin/export/scenario_pdf`; player packet + instructor key; reportlab guarded |
 | 13 | Scenario story wizard | L | Low | Capstone; depends on most prior items |
 
 ### Phase 5 — Performance & architecture (as scale demands)
@@ -353,15 +516,42 @@ Risk is the chance of disturbing existing behavior.
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
 | 21 | Answer normalization & defang | S–M | Very low | ✅ **Done** — universal normalizer wired into `check_answer` + indicator scoring; type/regex layers pending |
-| 18 | Team double-credit fix | S | Low | Changes results in multi-member teams; confirm design |
-| 19 | Consistent tie-break timestamps | S | Low | One well-defined rule for players + teams |
-| 20 | Recompute scores from solves | M | Low | Repair/derive board from `Solve`/`AnswerAttempt` |
-| 27 | `/get_score` N+1 + cache | S | Low | Eager-load/aggregate before live refresh |
+| 18 | Team double-credit | — | — | ✅ Decision: intended behavior (both team & player earn per solve); no change |
+| 19 | Consistent tie-break timestamps | S | Low | ✅ **Done** — teams now update `last_score_time` on every score (same rule as players: earliest to reach total wins) |
+| 20 | Recompute scores from solves | M | Low | ✅ **Done** — `/admin/score_audit` reconciles (challenge+indicator) vs stored; awards recorded (`mitigation_awards`); `?apply=1` destructively rebuilds scores + times from records |
+| 27 | `/get_score` N+1 + cache | S | Low | 🚧 N+1 fixed (eager-load `Users.team`) ✅; short cache deferred until live auto-refresh (#24) adds poll load |
 | 24 | Live auto-refresh standings | S–M | Low | SSE / poll / persisted live view |
 | 25 | Richer visualization | M | Low | Phase breakdown, score-over-time, first blood, ranks |
 | 26 | Anti-cheat surfacing | M | Low | Pattern-flag from `AnswerAttempt` |
 | 22 | First-blood / dynamic scoring | M | Medium | Optional modes; changes balance — gate behind config |
 | 23 | Mitigation submission precision | S | Medium | Optional penalties/rate-limit; keep configurable |
+
+### Phase 7 — Admin & operations (independent track)
+| # | Item | Effort | Risk | Notes |
+|---|------|--------|------|-------|
+| 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | Security basics; force the password change early |
+| 37 | Admin-action audit log | S–M | Low | Underpins #30 and trust |
+| 30 | Manual score adjustments | S | Low | Needs audit log (#37) |
+| 33 | Answer tester | S | Very low | ✅ **Done** — `/admin/test_answer`; `explain_match` shows normalized forms + which accepted answer matched |
+| 28 | Generation run console & history | M | Low | Streamed logs, cancel, per-table row counts |
+| 31 | Edit answers + re-grade | M | Low | Re-grade `AnswerAttempt`; pairs with #21 |
+| 34 | Facilitator analytics dashboard | M | Low | Builds on `Solve`/`AnswerAttempt` |
+| 32 | Hints & challenge gating | M | Low | Schema additions; player-facing |
+| 29 | Scheduled game start/stop | S | Low | Uses scheduling support |
+| 36 | Reset / archive / export game | M | Medium | Touches game state; guard carefully |
+| 35 | Multiple concurrent scenarios | L | Medium | Removes single-company/session assumption |
+
+### Phase 8 — Real-world intel & attribution (independent track)
+| # | Item | Effort | Risk | Notes |
+|---|------|--------|------|-------|
+| 39 | Inert-indicator safety controls | S | Low | Guardrail — do first; toggle, provenance, keep EICAR |
+| 40 | Actor attribution metadata | S | Low | ✅ **Done** — attribution/aliases/group-id/origin/motivation on actor config; validated; surfaced in preview + instructor-key PDF |
+| 46 | Validator extension (ATT&CK / intel refs) | S | Very low | 🚧 ATT&CK-id validation done (registry self-check in pre-flight + `validate_attack_ids`); actor-group/intel-pack refs await #40/#43 |
+| 42 | Real malware families + historical hashes | M | Low | Inert hashes-as-strings only; provenance |
+| 41 | Real TTP tooling & command lines | M | Low | From ATT&CK / Atomic Red Team |
+| 43 | Intel-pack ingestion (ATT&CK STIX + abuse.ch) | M–L | Low | Extends data packs (#4); licensing-aware |
+| 44 | Actor-consistent infra reuse (clustering) | M | Medium | Builds on #6/#7; core attribution enabler |
+| 45 | Attribution scoring mechanic | M | Low | Actor-name answers; aliases via #21 |
 
 ---
 
@@ -377,8 +567,9 @@ rest of the plan.
 1. **Dry-run preview (#5)** — lowest risk; the registry already exposes the tables
    each actor's attacks will write, so a preview can report expected row counts/tables
    without a full run.
-2. **Complete the partially-wired techniques (#14)** — finish `watering_hole:phishing`
-   and promote supply-chain / data-exfil / hands-on-keyboard to first-class attacks.
+2. **Complete the partially-wired techniques (#14)** — ✅ `watering_hole:phishing` and
+   `delivery:supply_chain` are now dispatched; remaining: promote data-exfil /
+   hands-on-keyboard to first-class attacks (needs new enum entries).
 3. **Registry-driven dispatch** — finish #2 by replacing the hardcoded `if`-chain in
    `generate_activity_new` with a registry loop. *Handle with care:* the email branch
    collapses `email:phishing` + `email:malware_delivery` into a single `gen_actor_email`
@@ -396,7 +587,8 @@ compelling when they describe a single connected intrusion.
 #2 Attack registry ──┬─► #1 Validation
                      ├─► #9 ATT&CK tagging
                      ├─► #3 Scenario GUI
-                     └─► #11 Auto-challenges ──► #12 Auto-guide ──► #13 Scenario wizard
+                     └─► #11 Auto-challenges ──► #12 Auto-guide ──┬─► #13 Scenario wizard
+                                                                  └─► #47 Scenario PDF export (admin)
 #6 Kill-chain model ─┬─► #7 Identity consistency
                      ├─► #8 Dwell/jitter
                      └─► (richer answers for #11/#12)
@@ -405,4 +597,6 @@ compelling when they describe a single connected intrusion.
 #10 Benign baseline ─► (independent realism gain)
 #16/#17 Performance & architecture ─► (independent track; pull forward as scale demands)
 #18–#27 Scoreboard & scoring ─► (independent track; #21 normalization → #20 recompute → #24/#25 live UX)
+#28–#38 Admin & operations ─► (independent track; #37 audit underpins #30; do #38 ops hardening first)
+#39–#46 Real-world intel & attribution ─► (#39 safety first → #40/#43 → #44 clustering[needs #6/#7] → #45 scoring)
 ```

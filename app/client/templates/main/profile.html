@@ -177,4 +177,49 @@
 
   </div>
 
+  {% if is_own_profile %}
+  <!-- Appearance / theme toggle -->
+  <div class="row">
+    <div class="col-lg-6">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-palette mr-2"></i>Appearance</h6>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">Choose how KC7 looks. Your choice is saved on this browser.</p>
+          <div class="btn-group btn-group-toggle" role="group" aria-label="Theme selection">
+            <button type="button" id="theme-default-btn" class="btn btn-outline-primary" onclick="kc7SetTheme('default')">
+              <i class="fas fa-sun mr-1"></i> Default (Light)
+            </button>
+            <button type="button" id="theme-cyber-btn" class="btn btn-outline-primary" onclick="kc7SetTheme('cyber')">
+              <i class="fas fa-terminal mr-1"></i> Cyber (Dark)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function kc7GetTheme() {
+      var m = document.cookie.match(/(?:^|;\s*)kc7_theme=([^;]+)/);
+      return m ? m[1] : 'default';
+    }
+    function kc7ApplyTheme(t) {
+      document.body.classList.toggle('theme-cyber', t === 'cyber');
+      var d = document.getElementById('theme-default-btn');
+      var c = document.getElementById('theme-cyber-btn');
+      if (d && c) {
+        d.classList.toggle('active', t !== 'cyber');
+        c.classList.toggle('active', t === 'cyber');
+      }
+    }
+    function kc7SetTheme(t) {
+      document.cookie = 'kc7_theme=' + t + '; path=/; max-age=31536000; SameSite=Lax';
+      kc7ApplyTheme(t);
+    }
+    kc7ApplyTheme(kc7GetTheme());
+  </script>
+  {% endif %}
+
 {% endblock %}

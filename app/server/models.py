@@ -290,6 +290,34 @@ class Solve(AuthBase):
         return '<Solve challenge=%r user=%r>' % (self.challenge_id, self.user_id)
 
 
+class MitigationAward(AuthBase):
+    """
+    Records each correct indicator (mitigation) award.
+
+    Indicator scoring credits both the submitting user and their team the same points,
+    but historically only the running totals were updated — there was no per-award
+    record, which made scores impossible to recompute exactly. This row is the
+    source-of-truth for indicator points (the equivalent of ``Solve`` for challenges).
+    """
+    __tablename__ = "mitigation_awards"
+
+    user_id        = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
+    team_id        = db.Column(db.Integer, nullable=True)
+    indicator      = db.Column(db.String(500), nullable=False)
+    points_awarded = db.Column(db.Integer, nullable=False, default=0)
+    awarded_at     = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, user_id, team_id, indicator, points_awarded):
+        self.user_id        = user_id
+        self.team_id        = team_id
+        self.indicator      = (indicator or "")[:500]
+        self.points_awarded = points_awarded
+        self.awarded_at     = datetime.datetime.now()
+
+    def __repr__(self):
+        return '<MitigationAward user=%r indicator=%r>' % (self.user_id, self.indicator)
+
+
 
 ##########################################################
 # Live answer attempt log (all submissions, right or wrong)
