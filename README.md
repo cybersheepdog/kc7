@@ -90,6 +90,8 @@ Players submit malicious indicators — domains, IPs, email addresses, and file 
 #### Challenges (Q&A)
 Players answer written questions that test their analysis and knowledge. Challenges are grouped by category and show point value and description. Answers are case-insensitive and support multiple accepted values separated by semicolons.
 
+Answers are also **normalized before comparison** 🆕, so structurally-identical indicators are accepted no matter how a player formats them: `http://bad.com`, `bad.com`, and `bad.com/` all match, and analyst-style *defanged* notation is understood (`hxxp://bad[.]com`, `1[.]2[.]3[.]4`, `user[at]evil.com`). The same normalization is applied to indicator (mitigation) submissions. It only ever *adds* matches — every answer the old exact-match logic accepted is still accepted — and Windows file paths / registry keys are left intact.
+
 #### Rounds (Named Game Sessions)
 Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
 

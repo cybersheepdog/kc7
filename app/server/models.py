@@ -250,9 +250,16 @@ class Challenge(AuthBase):
         self.round_id    = round_id
 
     def check_answer(self, submitted):
-        """Case-insensitive; supports multiple accepted answers separated by ';'."""
-        accepted = [a.strip().lower() for a in self.answer.split(";") if a.strip()]
-        return submitted.strip().lower() in accepted
+        """
+        Case-insensitive; supports multiple accepted answers separated by ';'.
+        Answers are normalized (refanged, URL scheme/trailing slash stripped, etc.)
+        on both sides before comparison, so structurally-identical indicators such as
+        'http://bad.com', 'bad.com', 'bad.com/' and 'hxxp://bad[.]com' all match.
+        Normalizing both sides can only add matches, never reject a previously-correct
+        answer.
+        """
+        from app.server.modules.scoring.answer_matching import answer_matches
+        return answer_matches(submitted, self.answer)
 
     def __repr__(self):
         return '<Challenge %r>' % self.name

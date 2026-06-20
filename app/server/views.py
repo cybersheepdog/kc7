@@ -332,8 +332,13 @@ def update_deny_list():
             old_indicators = set()
 
         newly_added = new_indicators - old_indicators
+        # Normalize both sides (refang, strip URL scheme/trailing slash, etc.) so a
+        # defanged submission like "bad[.]com" or "hxxp://bad.com/" still scores.
+        # Normalizing both sides can only add matches, never drop a previously-correct one.
+        from app.server.modules.scoring.answer_matching import normalize_answer
         malicious = get_malicious_indicators()
-        correct_new = [ind for ind in newly_added if ind in malicious]
+        malicious_normalized = {normalize_answer(m) for m in malicious}
+        correct_new = [ind for ind in newly_added if normalize_answer(ind) in malicious_normalized]
 
         game_session = db.session.get(GameSession, 1)
         points_per_correct = calculate_time_weighted_points(POINTS_PER_INDICATOR, game_session)

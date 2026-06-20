@@ -210,6 +210,80 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
 
 ---
 
+## Scoreboard & scoring
+
+Grounded in the current scoring path (`submit_answer`, `update_deny_list`,
+`calculate_time_weighted_points` / `calculate_round_time_weighted_points`,
+`/get_score`, and the `Users` / `Team` / `Solve` / `AnswerAttempt` models).
+
+### Correctness (bug fixes — do first)
+
+18. **Team double-credit fix.** `Solve` is unique per `(challenge_id, user_id)`, but
+    `submit_answer` adds to `current_user.team.score` on every first-per-*user* solve —
+    so two members of the same team solving the same challenge credit the team twice.
+    Credit a team at most once per challenge. *Note: this changes results in any
+    multi-member-team event, and there's a design choice — does a later teammate still
+    earn individual points? Confirm before shipping.*
+
+19. **Consistent tie-break timestamps.** Player `last_score_time` updates on every
+    score; `team.last_score_time` is only set once (when `None`). `/get_score`
+    tie-breaks both ascending, so players are ranked by *most recent* score and teams
+    by *first* score. Pick one rule (CTF convention: earliest to reach the current
+    total wins) and apply it to both.
+
+20. **Recompute scores from source of truth.** Totals are denormalized counters on
+    `Users`/`Team` with no way to rebuild them. `Solve.points_awarded` and
+    `AnswerAttempt` already log everything, so add a recalculate-from-records function
+    (and ideally derive the board from records) so corrected answers / deleted solves /
+    changed challenge values can't silently desync standings.
+
+### Answer matching
+
+21. **Answer normalization & defanging.** `Challenge.check_answer` only does
+    `strip().lower()` + `;`-alternates, so `http://bad.com`, `bad.com`, and `bad.com/`
+    are scored differently despite identical analysis. Canonicalize *both* sides before
+    comparing: refang analyst notation (`hxxp`→`http`, `[.]`/`(.)`/`[dot]`→`.`,
+    `[at]`→`@`), drop URL scheme and trailing slash, lowercase, trim. Backward-compatible
+    by construction (normalizing both sides can only *add* matches, never reject a
+    previously-correct answer). Apply the same normalizer to indicator scoring in
+    `update_deny_list` for consistency.
+    - *Later layers:* an optional per-challenge `answer_type` (url/domain/ip/sha256/
+      email/text) with type-specific normalizers, and a carefully-bounded optional
+      regex escape hatch (explicit opt-in, match timeout — guard against ReDoS, since
+      a request-thread can't be signal-interrupted safely).
+
+### Scoring design
+
+22. **Per-challenge timing, first-blood, optional dynamic scoring.** Global
+    time-weighting decays since *game start*, shared across all challenges, so late
+    joiners are permanently penalized and after 24h there's no speed incentive. Add
+    per-challenge decay from publish time, first-blood bonuses, and an optional
+    CTFd-style dynamic value (worth less as more teams solve it). *Optional modes;
+    changes game balance — gate behind config.*
+
+23. **Mitigation submission precision.** `update_deny_list` rewards correct new
+    indicators but never penalizes wrong ones, inviting spraying the indicator box.
+    Consider optional small penalties, rate-limiting, or an attempt cap. *Optional;
+    penalties can discourage learners — keep configurable.*
+
+### Scoreboard UX & integrity
+
+24. **Live auto-refresh standings.** `/get_score` is poll-only; push real-time updates
+    (SSE/websocket or a persisted live view) so the room sees movement.
+
+25. **Richer visualization.** Progress by kill-chain phase/category, a score-over-time
+    line per team, first-blood markers, and rank numbers with movement deltas.
+
+26. **Anti-cheat surfacing.** `AnswerAttempt` logs every submission — flag identical
+    answer strings across teams in tight windows or impossibly fast solves on the admin
+    live feed to catch answer-sharing.
+
+27. **Fix `/get_score` N+1 + cache.** It loads all users and touches `p.team.name` per
+    row (lazy load per player) on every poll. Eager-load/aggregate and cache a few
+    seconds before adding auto-refresh load.
+
+---
+
 ## Phased plan
 
 Effort key: **S** ≈ days · **M** ≈ 1–2 weeks · **L** ≈ multi-week.
@@ -275,6 +349,20 @@ Risk is the chance of disturbing existing behavior.
 > employee/wave counts make generation slow or fragile. It's independent of the
 > content and realism tracks.
 
+### Phase 6 — Scoreboard & scoring (independent track)
+| # | Item | Effort | Risk | Notes |
+|---|------|--------|------|-------|
+| 21 | Answer normalization & defang | S–M | Very low | ✅ **Done** — universal normalizer wired into `check_answer` + indicator scoring; type/regex layers pending |
+| 18 | Team double-credit fix | S | Low | Changes results in multi-member teams; confirm design |
+| 19 | Consistent tie-break timestamps | S | Low | One well-defined rule for players + teams |
+| 20 | Recompute scores from solves | M | Low | Repair/derive board from `Solve`/`AnswerAttempt` |
+| 27 | `/get_score` N+1 + cache | S | Low | Eager-load/aggregate before live refresh |
+| 24 | Live auto-refresh standings | S–M | Low | SSE / poll / persisted live view |
+| 25 | Richer visualization | M | Low | Phase breakdown, score-over-time, first blood, ranks |
+| 26 | Anti-cheat surfacing | M | Low | Pattern-flag from `AnswerAttempt` |
+| 22 | First-blood / dynamic scoring | M | Medium | Optional modes; changes balance — gate behind config |
+| 23 | Mitigation submission precision | S | Medium | Optional penalties/rate-limit; keep configurable |
+
 ---
 
 ## Recommended starting point
@@ -316,4 +404,5 @@ compelling when they describe a single connected intrusion.
 #5 Dry-run preview ──► (supports all authoring)
 #10 Benign baseline ─► (independent realism gain)
 #16/#17 Performance & architecture ─► (independent track; pull forward as scale demands)
+#18–#27 Scoreboard & scoring ─► (independent track; #21 normalization → #20 recompute → #24/#25 live UX)
 ```
