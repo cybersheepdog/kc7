@@ -127,6 +127,10 @@ class ProductionConfig(BaseConfig):
     LIVE_SCORE_SSE_POLL_SECONDS = 3      # how often the stream checks for changes
     LIVE_SCORE_SSE_MAX_SECONDS = 120     # stream lifetime before the client reconnects
 
+    # Seconds to cache the computed leaderboard so many concurrent pollers / SSE
+    # connections collapse to one DB read per window (#27). Set 0 to disable caching.
+    LEADERBOARD_CACHE_SECONDS = 2
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7

@@ -32,6 +32,11 @@
         <i class="fas fa-user mr-1"></i> Players
       </a>
     </li>
+    <li class="nav-item">
+      <a class="nav-link" id="progress-tab" data-toggle="tab" href="#progress-panel" role="tab">
+        <i class="fas fa-chart-line mr-1"></i> Progress
+      </a>
+    </li>
   </ul>
 
   <div class="tab-content" id="leaderboardTabContent">
@@ -67,6 +72,7 @@
               <thead class="thead-light">
                 <tr>
                   <th style="width:3rem;">#</th>
+                  <th style="width:3rem;" title="Movement since last update">Δ</th>
                   <th>Player</th>
                   <th>Team</th>
                   <th class="text-right">Score</th>
@@ -82,27 +88,93 @@
       </div>
     </div>
 
+    <!-- Progress Tab -->
+    <div class="tab-pane fade" id="progress-panel" role="tabpanel">
+
+      <!-- First blood -->
+      <div id="firstblood-banner" class="alert alert-danger d-flex align-items-center" style="display:none;">
+        <span style="font-size:1.4rem; margin-right:.5rem;">🩸</span>
+        <span id="firstblood-text"></span>
+      </div>
+
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Score over time</h6>
+        </div>
+        <div class="card-body">
+          <div id="overtime-empty" class="text-muted" style="display:none;">No solves yet — the race hasn't started.</div>
+          <div class="chart-area" style="position:relative; height:18rem;">
+            <canvas id="overTimeChart"></canvas>
+          </div>
+          <hr>
+          <small class="text-muted">Cumulative team score by minutes since the first solve.</small>
+        </div>
+      </div>
+
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">Progress by category</h6>
+        </div>
+        <div class="card-body">
+          <div id="category-empty" class="text-muted" style="display:none;">No solves yet.</div>
+          <div class="table-responsive">
+            <table class="table table-bordered table-sm" id="category-table" width="100%">
+              <thead class="thead-light"><tr id="category-head"></tr></thead>
+              <tbody id="category-tbody"></tbody>
+            </table>
+          </div>
+          <hr>
+          <small class="text-muted">Challenges solved per category — who has cracked which part of the kill chain.</small>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /tab-content -->
 
   <script src="{{ url_for('static', filename='js/demo/chart-bar-demo.js') }}"></script>
   <script>
 
-    // Team chart
+    // --- Rank movement tracking (#25) ---
+    // Remember each competitor's previous rank so we can show ▲/▼ movement deltas as
+    // scores change live. Maps name -> last rank (1-based).
+    var prevTeamRank = {};
+    var prevPlayerRank = {};
+
+    // Returns {txt, cls} describing movement from prev rank to current rank.
+    function rankDelta(prev, name, curRank) {
+      if (!(name in prev)) return { txt: 'NEW', cls: 'badge badge-info' };
+      var d = prev[name] - curRank;            // positive = climbed
+      if (d > 0) return { txt: '▲' + d, cls: 'text-success font-weight-bold' };
+      if (d < 0) return { txt: '▼' + (-d), cls: 'text-danger font-weight-bold' };
+      return { txt: '–', cls: 'text-muted' };
+    }
+
+    // Team chart — labels carry rank-movement arrows
     function updateTeamChart(SCORES) {
       if (!SCORES || !SCORES.teams || SCORES.teams.length === 0) {
         myBarChart.data.labels = [];
         myBarChart.data.datasets[0].data = [];
         myBarChart.update();
+        prevTeamRank = {};
         return;
       }
-      myBarChart.data.labels = SCORES.teams;
+      var labels = [], nextRank = {};
+      for (var i = 0; i < SCORES.teams.length; i++) {
+        var name = SCORES.teams[i], rank = i + 1;
+        var d = rankDelta(prevTeamRank, name, rank);
+        var arrow = (d.txt === '–' || d.txt === 'NEW') ? '' : '  ' + d.txt;
+        labels.push(name + arrow);
+        nextRank[name] = rank;
+      }
+      myBarChart.data.labels = labels;
       myBarChart.data.datasets[0].data = SCORES.scores;
       var maxScore = Math.max.apply(null, SCORES.scores);
       myBarChart.options.scales.xAxes[0].ticks.max = maxScore > 0 ? maxScore * 1.1 : 100;
       myBarChart.update();
+      prevTeamRank = nextRank;
     }
 
-    // Individual player table
+    // Individual player table — with a movement (Δ) column
     function updatePlayerTable(INDIVIDUAL) {
       var tbody = $('#players-tbody');
       tbody.empty();
@@ -110,18 +182,22 @@
       if (!INDIVIDUAL || !INDIVIDUAL.players || INDIVIDUAL.players.length === 0) {
         $('#players-table-wrap').hide();
         $('#players-empty').show();
+        prevPlayerRank = {};
         return;
       }
 
       $('#players-empty').hide();
       $('#players-table-wrap').show();
 
+      var nextRank = {};
       for (var i = 0; i < INDIVIDUAL.players.length; i++) {
-        var rank = i + 1;
+        var rank = i + 1, name = INDIVIDUAL.players[i];
         var medal = rank === 1 ? ' 🥇' : rank === 2 ? ' 🥈' : rank === 3 ? ' 🥉' : '';
+        var d = rankDelta(prevPlayerRank, name, rank);
         var row = $('<tr>');
         row.append($('<td>').text(rank + medal));
-        row.append($('<td>').text(INDIVIDUAL.players[i]));
+        row.append($('<td>').append($('<span>').addClass(d.cls).text(d.txt)));
+        row.append($('<td>').text(name));
         row.append($('<td>').append(
           $('<span class="badge badge-secondary">').text(INDIVIDUAL.teams[i])
         ));
@@ -129,7 +205,101 @@
           Number(INDIVIDUAL.scores[i]).toLocaleString()
         ));
         tbody.append(row);
+        nextRank[name] = rank;
       }
+      prevPlayerRank = nextRank;
+    }
+
+    // --- Progress tab: first blood, score-over-time, category breakdown (#25) ---
+    var overTimeChart = null;
+    var TEAM_COLORS = ['#22d3ee','#f59e0b','#a78bfa','#34d399','#f472b6','#60a5fa','#fb7185','#4ade80'];
+
+    function renderFirstBlood(fb) {
+      if (!fb) { $('#firstblood-banner').hide(); return; }
+      $('#firstblood-text').text(
+        'First blood: ' + fb.player + ' (' + fb.team + ') — "' + fb.challenge + '" [' + fb.category + ']'
+      );
+      $('#firstblood-banner').show();
+    }
+
+    function renderOverTime(timeline) {
+      var has = timeline && timeline.length &&
+                timeline.some(function (t) { return t.points && t.points.length; });
+      if (!has || typeof Chart === 'undefined') {
+        $('#overtime-empty').show();
+        if (overTimeChart) { overTimeChart.destroy(); overTimeChart = null; }
+        return;
+      }
+      $('#overtime-empty').hide();
+      var datasets = timeline.map(function (t, i) {
+        var c = TEAM_COLORS[i % TEAM_COLORS.length];
+        return {
+          label: t.name,
+          data: t.points.map(function (p) { return { x: p[0], y: p[1] }; }),
+          borderColor: c, backgroundColor: c, fill: false, lineTension: 0,
+          pointRadius: 3, borderWidth: 2, steppedLine: true
+        };
+      });
+      try {
+        if (overTimeChart) overTimeChart.destroy();
+        var ctx = document.getElementById('overTimeChart').getContext('2d');
+        overTimeChart = new Chart(ctx, {
+          type: 'line',
+          data: { datasets: datasets },
+          options: {
+            maintainAspectRatio: false,
+            tooltips: { mode: 'nearest', intersect: false },
+            legend: { display: true, position: 'bottom' },
+            scales: {
+              xAxes: [{ type: 'linear', position: 'bottom',
+                        scaleLabel: { display: true, labelString: 'Minutes since first solve' },
+                        ticks: { beginAtZero: true } }],
+              yAxes: [{ scaleLabel: { display: true, labelString: 'Cumulative score' },
+                        ticks: { beginAtZero: true } }]
+            }
+          }
+        });
+      } catch (e) { /* charting is best-effort; never break the page */ }
+    }
+
+    function renderCategory(b) {
+      var cats = (b && b.categories) || [];
+      var teams = (b && b.teams) || [];
+      if (!cats.length || !teams.length) {
+        $('#category-empty').show();
+        $('#category-table').hide();
+        return;
+      }
+      $('#category-empty').hide();
+      $('#category-table').show();
+
+      var head = $('#category-head').empty();
+      head.append($('<th>').text('Team'));
+      cats.forEach(function (c) { head.append($('<th class="text-center">').text(c)); });
+      head.append($('<th class="text-center">').text('Total'));
+
+      var tb = $('#category-tbody').empty();
+      teams.forEach(function (t) {
+        var row = $('<tr>');
+        row.append($('<td class="font-weight-bold">').text(t.name));
+        var total = 0;
+        cats.forEach(function (c) {
+          var n = (t.by_category && t.by_category[c]) || 0;
+          total += n;
+          row.append($('<td class="text-center">').text(n || '·'));
+        });
+        row.append($('<td class="text-center font-weight-bold">').text(total));
+        tb.append(row);
+      });
+    }
+
+    function update_breakdown() {
+      $.get('/score_breakdown', function (b) {
+        if (!b) return;
+        renderFirstBlood(b.first_blood);
+        renderOverTime(b.timeline);
+        renderCategory(b);
+      });
     }
 
     // Apply a leaderboard payload to both views
@@ -204,6 +374,11 @@
     // Always paint immediately, then start live updates (SSE with poll fallback).
     update_values();
     start_live_updates();
+
+    // Progress analytics (#25): first blood, score-over-time, category breakdown.
+    // Independent of the live score feed; refreshed on its own gentle cadence.
+    update_breakdown();
+    window.setInterval(update_breakdown, 15000);
 
   </script>
 

@@ -1,0 +1,66 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-clipboard-list mr-2 text-primary"></i>Admin Audit Log
+  </h1>
+</div>
+
+<div class="card shadow mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="form-inline">
+      <label class="mr-2 font-weight-bold small">Filter by category:</label>
+      <select class="form-control form-control-sm mr-2" name="action" onchange="this.form.submit()">
+        <option value="">All actions</option>
+        {% for c in categories %}
+        <option value="{{ c }}" {{ 'selected' if current == c else '' }}>{{ c }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button class="btn btn-sm btn-primary" type="submit">Apply</button></noscript>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3 d-flex align-items-center justify-content-between">
+    <h6 class="m-0 font-weight-bold text-primary">Recent privileged actions</h6>
+    <small class="text-muted">Showing {{ entries|length }} most recent</small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:640px; overflow-y:auto;">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="thead-light" style="position:sticky;top:0;z-index:1;">
+          <tr>
+            <th style="width:160px">Time</th>
+            <th style="width:140px">Admin</th>
+            <th style="width:170px">Action</th>
+            <th>Target</th>
+            <th>Detail</th>
+            <th style="width:120px">IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+          <tr>
+            <td class="text-muted small">{{ e.created_at }}</td>
+            <td><strong>{{ e.actor }}</strong></td>
+            <td><span class="badge badge-light">{{ e.action }}</span></td>
+            <td class="small">{{ e.target }}</td>
+            <td class="small">{{ e.detail }}</td>
+            <td class="text-muted small">{{ e.ip }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              <i class="fas fa-clipboard-list mr-1"></i> No admin actions recorded yet.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -14,6 +14,7 @@ from sqlalchemy.sql.expression import func, select
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
 from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig
+from app.server.modules.audit.audit_log import record_admin_action
 from app.server.modules.organization.Company import Company, Employee
 from app.server.modules.clock.Clock import Clock
 from app.server.modules.logging.uploadLogs import LogUploader
@@ -192,6 +193,7 @@ def call_start():
     app = current_app._get_current_object()
     thread = threading.Thread(target=_run_game_in_background, args=(app,), daemon=True)
     thread.start()
+    record_admin_action("game.start", detail="Started data generation")
     return jsonify({"STATE": True})
 
 
@@ -248,6 +250,7 @@ def stop_game():
     current_session = db.session.get(GameSession, 1)
     current_session.state = False
     db.session.commit()
+    record_admin_action("game.stop", detail="Requested generation halt")
     flash("The game has been Stopped")
     return jsonify({"STATE": current_session.state})
 
@@ -279,6 +282,7 @@ def restart_game():
     db.session.query(Employee).delete()
     db.session.query(Company).delete()
     db.session.commit()
+    record_admin_action("game.restart", detail="Reset game: cleared scores, solves, and generated data")
     flash("The game has been reset", "success")
 
     return jsonify({"STATE": current_session.state})
@@ -473,6 +477,13 @@ def edit_user():
                 user.team_id = team.id
 
         db.session.commit()
+        changes = []
+        if new_pass:
+            changes.append("password reset")
+        if new_role in ("Admin", "Player"):
+            changes.append(f"role={new_role}")
+        changes.append("team=" + (new_team or "none"))
+        record_admin_action("user.edit", target=user.username, detail="; ".join(changes))
         flash(f"User '{user.username}' updated.", "success")
     except Exception as e:
         db.session.rollback()
@@ -514,6 +525,7 @@ def add_user():
 
         db.session.add(new_user)
         db.session.commit()
+        record_admin_action("user.create", target=username, detail=f"role={role_name}")
         flash(f"User '{username}' created successfully.", "success")
     except Exception as e:
         db.session.rollback()
@@ -706,7 +718,35 @@ def import_users_csv():
     return redirect(url_for("main.manage_users"))
 
 
-def _leaderboard_payload():
+# Short, process-wide cache for the leaderboard payload (#27). With live auto-refresh
+# (#24) many clients poll /get_score and each SSE connection re-queries every few
+# seconds; caching the computed result for a couple of seconds collapses all of that to
+# at most one DB read per TTL, regardless of how many viewers are watching. A leaderboard
+# that's a second or two stale is fine for a scoreboard.
+_LEADERBOARD_CACHE = {"at": 0.0, "data": None}
+
+
+def _leaderboard_payload(use_cache=True):
+    """Cached wrapper around _compute_leaderboard (see #27)."""
+    import time as _time
+    ttl = 2
+    if use_cache:
+        try:
+            ttl = float(current_app.config.get("LEADERBOARD_CACHE_SECONDS", 2) or 0)
+        except Exception:
+            ttl = 2
+        if ttl > 0:
+            c = _LEADERBOARD_CACHE
+            if c["data"] is not None and (_time.time() - c["at"]) < ttl:
+                return c["data"]
+    data = _compute_leaderboard()
+    if use_cache and ttl > 0:
+        _LEADERBOARD_CACHE["data"] = data
+        _LEADERBOARD_CACHE["at"] = _time.time()
+    return data
+
+
+def _compute_leaderboard():
     """
     Compute the leaderboard data for both teams and individual players.
     Excludes the admin team (id=1) and its members.
@@ -823,6 +863,85 @@ def score_stream():
             "Connection": "keep-alive",
         },
     )
+
+
+def _score_breakdown_payload():
+    """
+    Richer leaderboard analytics from the Solve log (#25):
+      - categories: the challenge categories present, sorted;
+      - teams: per-team solved-count by category (progress by kill-chain phase/category);
+      - timeline: per-team cumulative score over time (minutes since the first solve),
+        for a score-over-time line chart;
+      - first_blood: the earliest solve in the game (team, player, challenge, time).
+    Admin team (id=1) is excluded. Purely additive — independent of /get_score.
+    """
+    from app.server.models import Solve, Challenge
+    from sqlalchemy.orm import joinedload
+
+    solves = (
+        db.session.query(Solve)
+        .options(joinedload(Solve.user).joinedload(Users.team), joinedload(Solve.challenge))
+        .join(Challenge, Solve.challenge_id == Challenge.id)
+        .order_by(Solve.solved_at.asc())
+        .all()
+    )
+    # keep only solves by non-admin players with a known team
+    solves = [s for s in solves
+              if s.user and s.user.team and s.user.team.id != 1 and s.solved_at is not None]
+
+    categories = sorted({(s.challenge.category if s.challenge else "General") or "General"
+                         for s in solves})
+
+    teams = {}            # name -> {"by_category": {...}, "score": int}
+    timeline = {}         # name -> list[[minutes, cumulative]]
+    cum = {}              # name -> running total
+    first_blood = None
+
+    t0 = solves[0].solved_at if solves else None
+    for s in solves:
+        tname = s.user.team.name
+        cat = (s.challenge.category if s.challenge else "General") or "General"
+        pts = s.points_awarded or 0
+
+        t = teams.setdefault(tname, {"by_category": {c: 0 for c in categories}, "score": 0})
+        t["by_category"][cat] = t["by_category"].get(cat, 0) + 1
+        t["score"] += pts
+
+        cum[tname] = cum.get(tname, 0) + pts
+        minutes = round((s.solved_at - t0).total_seconds() / 60.0, 2) if t0 else 0
+        timeline.setdefault(tname, []).append([minutes, cum[tname]])
+
+        if first_blood is None:
+            first_blood = {
+                "team": tname,
+                "player": s.user.username,
+                "challenge": s.challenge.name if s.challenge else "?",
+                "category": cat,
+                "at": s.solved_at.isoformat(),
+            }
+
+    teams_out = [{"name": n, "by_category": d["by_category"], "score": d["score"]}
+                 for n, d in teams.items()]
+    teams_out.sort(key=lambda x: -x["score"])
+    timeline_out = [{"name": n, "points": pts} for n, pts in timeline.items()]
+
+    return {
+        "categories": categories,
+        "teams": teams_out,
+        "timeline": timeline_out,
+        "first_blood": first_blood,
+    }
+
+
+@main.route("/score_breakdown", methods=["GET"])
+def score_breakdown():
+    """Leaderboard analytics for the scoreboard's Progress view (#25)."""
+    try:
+        return jsonify(_score_breakdown_payload())
+    except Exception as e:
+        print(f"score_breakdown: {e}")
+        # Never break the scoreboard page; return an empty-but-valid shape.
+        return jsonify({"categories": [], "teams": [], "timeline": [], "first_blood": None})
 
 
 @main.route("/getPermissionsList", methods=["GET"])
@@ -1083,9 +1202,11 @@ def delete_challenge():
         challenge_id = int(request.form["challenge_id"])
         Solve.query.filter_by(challenge_id=challenge_id).delete()
         ch = db.session.get(Challenge, challenge_id)
+        ch_name = ch.name if ch else str(challenge_id)
         if ch:
             db.session.delete(ch)
         db.session.commit()
+        record_admin_action("challenge.delete", target=ch_name)
         flash("Challenge deleted.", "success")
     except Exception as e:
         print("delete_challenge error: " + str(e))
@@ -1108,6 +1229,7 @@ def mass_delete_challenges():
         AnswerAttempt.query.filter(AnswerAttempt.challenge_id.in_(ids)).delete(synchronize_session=False)
         Challenge.query.filter(Challenge.id.in_(ids)).delete(synchronize_session=False)
         db.session.commit()
+        record_admin_action("challenge.mass_delete", detail="Deleted %d challenge(s)" % len(ids))
         flash("Deleted " + str(len(ids)) + " challenge(s).", "success")
     except Exception as e:
         print("mass_delete_challenges error: " + str(e))
@@ -1998,6 +2120,7 @@ def scenario_save():
                                editor={"kind": kind, "name": name, "content": content},
                                errors=errors)
 
+    record_admin_action("config.save", target="%s/%s" % (kind, name), detail="Saved scenario config")
     flash("Saved %s config '%s'." % (kind, name), "success")
     return redirect(url_for("main.manage_scenario", kind=kind,
                             name=name if name.endswith(".yaml") else name + ".yaml"))
@@ -2012,6 +2135,7 @@ def scenario_delete():
     name = request.form.get("name", "")
     try:
         if sa.delete_file(kind, name):
+            record_admin_action("config.delete", target="%s/%s" % (kind, name), detail="Deleted scenario config")
             flash("Deleted %s." % name, "success")
         else:
             flash("%s not found." % name, "error")
@@ -2062,6 +2186,8 @@ def generate_challenges():
                                  description=c["description"], answer=c["answer"], value=c["value"]))
         added += 1
     db.session.commit()
+    if added:
+        record_admin_action("challenge.generate", detail="Auto-generated %d challenge(s)" % added)
     flash("Auto-generated %d challenge(s) from the scenario ground truth (%d already existed)."
           % (added, len(proposed) - added), "success")
     return redirect(url_for("main.manage_challenges"))
@@ -2108,6 +2234,8 @@ def import_intel_pack():
         if errs:
             flash("Imported config failed validation: " + "; ".join(errs), "danger")
             return redirect(url_for("main.manage_scenario"))
+        record_admin_action("config.import_intel_pack", target="actor/%s" % name,
+                             detail="Imported %d techniques" % len(cfg.get("attacks", [])))
         msg = "Imported intel pack -> actor '%s' (%d techniques)." % (
             cfg.get("name"), len(cfg.get("attacks", [])))
         if res["notes"]:
@@ -2359,6 +2487,20 @@ def live_dashboard():
     return render_template("admin/live_dashboard.html", rounds=round_list)
 
 
+@main.route("/admin/audit_log")
+@login_required
+@roles_required("Admin")
+def audit_log():
+    """Admin-action audit trail (#37): privileged actions for accountability."""
+    from app.server.modules.audit.audit_log import recent_actions
+    prefix = (request.args.get("action") or "").strip() or None
+    entries = recent_actions(limit=300, action_prefix=prefix)
+    # distinct action prefixes for the filter dropdown (e.g. game, user, config, challenge)
+    categories = sorted({(e["action"].split(".")[0]) for e in recent_actions(limit=1000)})
+    return render_template("admin/audit_log.html", entries=entries,
+                           categories=categories, current=prefix or "")
+
+
 @main.route("/admin/live_feed")
 @login_required
 @roles_required("Admin")
@@ -2422,9 +2564,46 @@ def live_feed():
         correct = sq.filter(AnswerAttempt.correct == True).count()
         pct     = round(correct / total * 100, 1) if total else 0
 
-        return jsonify(rows=rows, max_id=max_id, stats={
+        # Anti-cheat surfacing (#26): scan a recent window of attempts for suspicious
+        # patterns (shared answers across teams, fast copies, burst solving). Best-effort
+        # — any failure here must never break the feed.
+        flags = []
+        try:
+            recent_q = db.session.query(AnswerAttempt, Challenge, Users)\
+                .join(Challenge, AnswerAttempt.challenge_id == Challenge.id)\
+                .join(Users, AnswerAttempt.user_id == Users.id)\
+                .filter(Users.team_id != 1)
+            if round_id not in ("-1", "", None):
+                rid = int(round_id)
+                if rid == 0:
+                    recent_q = recent_q.filter(Challenge.round_id == None)
+                elif rid > 0:
+                    recent_q = recent_q.filter(Challenge.round_id == rid)
+            recent_raw = recent_q.order_by(AnswerAttempt.id.desc()).limit(500).all()
+            attempts = [{
+                "id": a.id, "user": u.username,
+                "team": u.team.name if u.team else "—",
+                "challenge_id": a.challenge_id, "challenge": c.name,
+                "submitted": a.submitted, "correct": bool(a.correct),
+                "at": a.attempted_at,
+            } for a, c, u in recent_raw]
+
+            from app.server.modules.anti_cheat.anti_cheat import analyze_attempts
+            from app.server.modules.scoring.answer_matching import normalize_answer
+            raw_flags = analyze_attempts(attempts, normalize=normalize_answer)
+            for f in raw_flags:
+                flags.append({
+                    "type": f["type"], "severity": f["severity"],
+                    "title": f["title"], "detail": f["detail"],
+                    "challenge": f.get("challenge"), "teams": f.get("teams", []),
+                    "at": f["at"].strftime("%Y-%m-%d %H:%M:%S") if f.get("at") else "",
+                })
+        except Exception as e:
+            print("live_feed anti-cheat error:", e)
+
+        return jsonify(rows=rows, max_id=max_id, flags=flags, stats={
             "total": total, "correct": correct, "pct": pct
         })
     except Exception as e:
         print("live_feed error:", e)
-        return jsonify(rows=[], max_id=since, stats={"total": 0, "correct": 0, "pct": 0})
+        return jsonify(rows=[], max_id=since, flags=[], stats={"total": 0, "correct": 0, "pct": 0})

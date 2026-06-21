@@ -363,16 +363,41 @@ Grounded in the current scoring path (`submit_answer`, `update_deny_list`,
 
 25. **Richer visualization.** Progress by kill-chain phase/category, a score-over-time
     line per team, first-blood markers, and rank numbers with movement deltas.
+    *Status: ✅ Done. A new `/score_breakdown` endpoint mines the `Solve` log (joined to
+    `Challenge.category` + team) for: per-team solved-count **by category**, a **cumulative
+    score-over-time** series per team (minutes since the first solve), and the game's
+    **first blood** (earliest solve). The scoreboard gained a **Progress** tab rendering a
+    Chart.js score-over-time line per team, a category-progress table (teams × categories),
+    and a first-blood banner. The live Teams/Players views now show **rank-movement deltas**
+    (▲/▼ vs. the previous update, "NEW" for first appearance) — which pair with the #24 live
+    feed so the room watches positions change in real time. All additive and guarded: the
+    endpoint returns an empty-but-valid shape on error and the charts are best-effort, so the
+    existing board never breaks.*
 
 26. **Anti-cheat surfacing.** `AnswerAttempt` logs every submission — flag identical
     answer strings across teams in tight windows or impossibly fast solves on the admin
     live feed to catch answer-sharing.
+    *Status: ✅ Done. New pure `modules/anti_cheat/anti_cheat.py` (`analyze_attempts`)
+    scans a recent window of attempts for three patterns: **shared answer** (same
+    normalized answer from ≥2 different teams within a window — uses the #21 normalizer so
+    defanged/format variants still match), **fast copy** (a team's correct answer landing
+    within seconds of a different team's correct solve of the same challenge), and **burst
+    solving** (one user racking up many correct solves faster than a human could read the
+    questions). The `/admin/live_feed` endpoint now returns severity-tagged `flags`, and
+    the Live Answer Feed dashboard shows an "Integrity flags" panel — framed as *patterns
+    worth a look, not proof* (the engine never auto-penalizes). Best-effort and guarded so
+    flag computation can never break the feed. Thresholds are constants in the analyzer.*
 
 27. **Fix `/get_score` N+1 + cache.** It loads all users and touches `p.team.name` per
     row (lazy load per player) on every poll. Eager-load/aggregate and cache a few
-    seconds before adding auto-refresh load. *Status: 🚧 N+1 fixed —
-    `joinedload(Users.team)` eliminates the per-player team query; the short cache is
-    intentionally deferred until live auto-refresh (#24) actually adds poll load.*
+    seconds before adding auto-refresh load. *Status: ✅ Done. N+1 fixed earlier with
+    `joinedload(Users.team)`; now that live auto-refresh (#24) actually adds poll/stream
+    load, the deferred **short cache** is in: the leaderboard computation is split into
+    `_compute_leaderboard()` + a cached `_leaderboard_payload()` backed by a process-wide
+    TTL cache (`LEADERBOARD_CACHE_SECONDS`, default 2; set 0 to disable). Many concurrent
+    pollers and every SSE connection now collapse to at most one DB read per window
+    instead of one per request — a couple of seconds of staleness is fine for a
+    scoreboard. Shared by both `/get_score` and `/score_stream` so they stay consistent.*
 
 ---
 
@@ -440,6 +465,15 @@ score recompute (#20), anti-cheat surfacing (#26).
 
 37. **Admin-action audit log.** Record privileged actions (score edits, config changes,
     user/role changes, game start/stop) for accountability.
+    *Status: ✅ Done. New append-only `AdminAudit` table (auto-creates) + a guarded
+    `record_admin_action()` helper (`modules/audit/audit_log.py`) that captures the acting
+    admin, action, target, detail, IP, and time — best-effort so it can never break the
+    action it logs. Instrumented across the privileged routes: **game** start/stop/restart,
+    **user** create/edit (incl. role + team changes), **config** scenario save/delete +
+    intel-pack import, and **challenge** generate/delete/mass-delete. A read-only
+    `/admin/audit_log` view (linked in the sidebar) lists recent entries newest-first with
+    a category filter (game / user / config / challenge). Game-reset already resets scores,
+    so it's captured as `game.restart`; there's no separate manual score-edit route.*
 
 38. **Access & resilience.** Force-change the default `admin`/`admin` password on first
     login, add finer roles (read-only **facilitator/observer**, **grader**) alongside
@@ -647,10 +681,10 @@ Risk is the chance of disturbing existing behavior.
 | 18 | Team double-credit | — | — | ✅ Decision: intended behavior (both team & player earn per solve); no change |
 | 19 | Consistent tie-break timestamps | S | Low | ✅ **Done** — teams now update `last_score_time` on every score (same rule as players: earliest to reach total wins) |
 | 20 | Recompute scores from solves | M | Low | ✅ **Done** — `/admin/score_audit` reconciles (challenge+indicator) vs stored; awards recorded (`mitigation_awards`); `?apply=1` destructively rebuilds scores + times from records |
-| 27 | `/get_score` N+1 + cache | S | Low | 🚧 N+1 fixed (eager-load `Users.team`) ✅; short cache deferred until live auto-refresh (#24) adds poll load |
+| 27 | `/get_score` N+1 + cache | S | Low | ✅ Done — N+1 fixed (eager-load `Users.team`) + process-wide TTL cache (`LEADERBOARD_CACHE_SECONDS`) shared by poll + SSE |
 | 24 | Live auto-refresh standings | S–M | Low | ✅ Done — `/score_stream` SSE push (opt-in `LIVE_SCORE_SSE_ENABLED`) with automatic fallback to the existing poll; shared `_leaderboard_payload()`; LIVE indicator |
-| 25 | Richer visualization | M | Low | Phase breakdown, score-over-time, first blood, ranks |
-| 26 | Anti-cheat surfacing | M | Low | Pattern-flag from `AnswerAttempt` |
+| 25 | Richer visualization | M | Low | ✅ Done — Progress tab (`/score_breakdown`): score-over-time line, category-progress table, first-blood banner + rank-movement deltas on the live board |
+| 26 | Anti-cheat surfacing | M | Low | ✅ Done — `analyze_attempts` flags shared answers / fast copies / burst solving; "Integrity flags" panel on the live feed (advisory, never auto-penalizes) |
 | 22 | First-blood / dynamic scoring | M | Medium | ✅ **Done** — `dynamic_scoring` module; opt-in via `DYNAMIC_SCORING_ENABLED` (off by default), tunable min/decay/first-blood% |
 | 23 | Mitigation submission precision | S | Medium | Optional penalties/rate-limit; keep configurable |
 
@@ -658,7 +692,7 @@ Risk is the chance of disturbing existing behavior.
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
 | 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | Security basics; force the password change early |
-| 37 | Admin-action audit log | S–M | Low | Underpins #30 and trust |
+| 37 | Admin-action audit log | S–M | Low | ✅ Done — `AdminAudit` table + guarded `record_admin_action()` wired into game/user/config/challenge routes; read-only `/admin/audit_log` view with category filter |
 | 30 | Manual score adjustments | S | Low | Needs audit log (#37) |
 | 33 | Answer tester | S | Very low | ✅ **Done** — `/admin/test_answer`; `explain_match` shows normalized forms + which accepted answer matched |
 | 28 | Generation run console & history | M | Low | ✅ **Done** — run history + per-table row counts, streamed progress log, and Stop-to-cancel mid-run |

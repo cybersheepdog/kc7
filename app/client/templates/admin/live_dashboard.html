@@ -80,6 +80,32 @@
   </div>
 </div>
 
+<!-- Anti-cheat flags (#26) -->
+<div class="card shadow mb-3 border-left-warning" id="flagsCard" style="display:none;">
+  <div class="card-header py-2 d-flex align-items-center justify-content-between bg-light">
+    <h6 class="m-0 font-weight-bold text-warning">
+      <i class="fas fa-user-secret mr-1"></i> Integrity flags
+      <span class="badge badge-warning ml-1" id="flagsCount">0</span>
+    </h6>
+    <small class="text-muted">Patterns worth a look — not proof. Review before acting.</small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:260px; overflow-y:auto;">
+      <table class="table table-sm mb-0">
+        <thead class="thead-light" style="position:sticky;top:0;z-index:1;">
+          <tr>
+            <th style="width:90px">Severity</th>
+            <th style="width:150px">Type</th>
+            <th>Detail</th>
+            <th style="width:140px">Time</th>
+          </tr>
+        </thead>
+        <tbody id="flagsBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- Live feed table -->
 <div class="card shadow mb-4">
   <div class="card-header py-3 d-flex align-items-center justify-content-between">
@@ -167,6 +193,34 @@ function escHtml(s) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+var TYPE_LABEL = {
+  shared_answer: 'Shared answer',
+  fast_copy:     'Fast copy',
+  burst:         'Burst solving'
+};
+
+function renderFlags(flags) {
+  flags = flags || [];
+  $('#flagsCount').text(flags.length);
+  if (flags.length === 0) { $('#flagsCard').hide(); return; }
+  $('#flagsCard').show();
+  var html = '';
+  flags.forEach(function(f) {
+    var sevBadge = f.severity === 'high'
+      ? '<span class="badge badge-danger">High</span>'
+      : (f.severity === 'medium'
+          ? '<span class="badge badge-warning">Medium</span>'
+          : '<span class="badge badge-secondary">Low</span>');
+    html += '<tr>'
+      + '<td>' + sevBadge + '</td>'
+      + '<td><span class="badge badge-light">' + escHtml(TYPE_LABEL[f.type] || f.type) + '</span></td>'
+      + '<td class="small">' + escHtml(f.detail) + '</td>'
+      + '<td class="text-muted small">' + escHtml(f.at) + '</td>'
+      + '</tr>';
+  });
+  $('#flagsBody').html(html);
+}
+
 function poll() {
   if (paused) return;
   var roundId = $('#roundFilter').val();
@@ -186,6 +240,7 @@ function poll() {
       $('#statPct').text(data.stats.pct + '%');
     }
     if (data.max_id) maxId = Math.max(maxId, data.max_id);
+    renderFlags(data.flags);
     applyFilters();
     $('#lastUpdated').text('Updated ' + new Date().toLocaleTimeString());
   });

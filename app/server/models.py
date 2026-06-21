@@ -390,6 +390,43 @@ class AnswerAttempt(AuthBase):
         return '<AnswerAttempt challenge=%r user=%r correct=%r>' % (
             self.challenge_id, self.user_id, self.correct)
 
+
+class AdminAudit(AuthBase):
+    """Append-only audit trail of privileged admin actions (#37)."""
+    __tablename__ = "admin_audit"
+
+    actor_user_id  = db.Column(db.Integer, nullable=True)   # admin who acted (nullable: may be system)
+    actor_username = db.Column(db.String(150), nullable=False, default="?")  # denormalized for display
+    action         = db.Column(db.String(80),  nullable=False)  # e.g. "game.start", "user.edit"
+    target         = db.Column(db.String(200), nullable=True)   # what was acted on
+    detail         = db.Column(db.String(500), nullable=True)   # freeform context
+    ip             = db.Column(db.String(64),  nullable=True)
+    created_at     = db.Column(db.DateTime,    nullable=False)
+
+    def __init__(self, actor_user_id, actor_username, action, target=None, detail=None, ip=None):
+        self.actor_user_id  = actor_user_id
+        self.actor_username = (actor_username or "?")[:150]
+        self.action         = (action or "?")[:80]
+        self.target         = (target or None) and str(target)[:200]
+        self.detail         = (detail or None) and str(detail)[:500]
+        self.ip             = (ip or None) and str(ip)[:64]
+        self.created_at     = datetime.datetime.now()
+
+    def to_dict(self):
+        return {
+            "id":         self.id,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "actor":      self.actor_username,
+            "action":     self.action,
+            "target":     self.target or "",
+            "detail":     self.detail or "",
+            "ip":         self.ip or "",
+        }
+
+    def __repr__(self):
+        return '<AdminAudit %r by %r>' % (self.action, self.actor_username)
+
+
 ##########################################################
 # Named game rounds with player registration
 ##########################################################

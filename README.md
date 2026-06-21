@@ -98,7 +98,9 @@ Answers are also **normalized before comparison** 🆕, so structurally-identica
 Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
 
 #### Leaderboard
-The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams and Players tabs. Rankings are sorted by score with tie-breaking by earliest score time. The board refreshes itself automatically: by default it polls every 10 seconds, and a pulsing **LIVE** badge shows it's updating. For near-real-time **push** updates (so a whole room sees movement the instant a score lands), enable `LIVE_SCORE_SSE_ENABLED` 🆕 in `config.py` — the page then streams updates over Server-Sent Events (`/score_stream`) and automatically falls back to polling if the stream is unavailable. (SSE needs a threaded/multi-worker server such as gunicorn or `flask run` with threading.)
+The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams, Players, and **Progress** tabs. Rankings are sorted by score with tie-breaking by earliest score time, and the live Teams/Players views now show **rank-movement deltas** (▲/▼ since the last update, "NEW" on first appearance). The board refreshes itself automatically: by default it polls every 10 seconds, and a pulsing **LIVE** badge shows it's updating. For near-real-time **push** updates (so a whole room sees movement the instant a score lands), enable `LIVE_SCORE_SSE_ENABLED` 🆕 in `config.py` — the page then streams updates over Server-Sent Events (`/score_stream`) and automatically falls back to polling if the stream is unavailable. (SSE needs a threaded/multi-worker server such as gunicorn or `flask run` with threading.)
+
+The **Progress** tab 🆕 adds richer analytics drawn from the solve log (`/score_breakdown`): a **score-over-time** line chart per team (cumulative score by minutes since the first solve), a **progress-by-category** table showing how many challenges each team has cracked in each category (Attribution, Command & Control, Malware, MITRE ATT&CK, …), and a **first-blood** banner calling out who drew first blood and on which challenge.
 
 #### Appearance / Theme 🆕
 The app ships with a refreshed light theme by default. From their **profile page**, each user can toggle between the **Default (Light)** look and a **Cyber (Dark)** SOC-style theme (dark surfaces, cyan accent, monospace touches). The choice is remembered via a cookie and applied across every page — server-side, so there's no flash on load. It's a presentation-only override (a `theme-cyber` body class enabling `kc7-dark.css`); no game logic or data is affected.
@@ -205,6 +207,12 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Filter by round and by correct/incorrect result
 - Running stats: total attempts, correct count, success rate
 - Pause/resume without losing buffered data
+- **Integrity flags** 🆕 — an advisory panel that surfaces suspicious patterns from the submission log: the **same answer from multiple teams** in a tight window (defang-aware, so `1.2.3.4` and `1[.]2[.]3[.]4` count as the same), a **suspiciously fast solve** landing seconds after another team's correct answer, and **burst solving** (one player getting many correct answers faster than the questions can be read). These are leads worth a look, not proof — the system never auto-penalizes.
+
+#### Audit Log (`/admin/audit_log`) 🆕
+- An append-only record of privileged admin actions, for accountability when multiple staff run an event.
+- Captures **who** did **what**, to which **target**, with detail, IP, and timestamp — across game start/stop/restart, user create/edit (including role and team changes), scenario config save/delete, intel-pack import, and challenge generate/delete.
+- Read-only view, newest-first, with a category filter (game / user / config / challenge). Logging is best-effort and never blocks the action it records.
 
 #### Adversary Techniques (Actor Configs) 🆕
 Each malicious actor is defined by a YAML file in `app/game_configs/actors/`. The actor's `attacks:` list controls which techniques it carries out during data generation — add or remove a technique string to change what telemetry the scenario produces. No code changes are needed to re-mix techniques across actors.
