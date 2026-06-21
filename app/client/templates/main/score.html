@@ -4,7 +4,21 @@
   <!-- Page Heading -->
   <div class="d-sm-flex align-items-center justify-content-between mb-4">
     <h1 class="h3 mb-0 text-gray-800">Leaderboard</h1>
+    <span id="live-indicator" class="badge badge-pill badge-secondary" title="Auto-refreshing">
+      <span class="live-dot"></span> LIVE
+    </span>
   </div>
+
+  <style>
+    #live-indicator { font-weight: 600; letter-spacing: .04em; }
+    #live-indicator .live-dot {
+      display: inline-block; width: .55em; height: .55em; border-radius: 50%;
+      background: currentColor; margin-right: .35em; vertical-align: middle; opacity: .6;
+    }
+    #live-indicator.is-live { background-color: #16a34a; color: #fff; }
+    #live-indicator.is-live .live-dot { opacity: 1; animation: livepulse 1.4s ease-in-out infinite; }
+    @keyframes livepulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  </style>
 
   <!-- Leaderboard Tabs -->
   <ul class="nav nav-tabs mb-3" id="leaderboardTabs" role="tablist">
@@ -33,7 +47,7 @@
             <canvas id="myBarChart"></canvas>
           </div>
           <hr>
-          <small class="text-muted">Updates every 10 seconds. Ties broken by who scored first.</small>
+          <small class="text-muted">Updates automatically. Ties broken by who scored first.</small>
         </div>
       </div>
     </div>
@@ -63,7 +77,7 @@
             </table>
           </div>
           <hr>
-          <small class="text-muted">Updates every 10 seconds. Ties broken by who scored first.</small>
+          <small class="text-muted">Updates automatically. Ties broken by who scored first.</small>
         </div>
       </div>
     </div>
@@ -118,12 +132,60 @@
       }
     }
 
-    // Poll both leaderboards
+    // Apply a leaderboard payload to both views
+    function render_scores(data) {
+      if (!data) return;
+      updateTeamChart(data.SCORES);
+      updatePlayerTable(data.INDIVIDUAL);
+    }
+
+    function set_live(on) {
+      var el = document.getElementById('live-indicator');
+      if (!el) return;
+      el.classList.toggle('is-live', !!on);
+      el.title = on ? 'Live updates (pushed)' : 'Auto-refreshing';
+    }
+
+    // Poll both leaderboards (fallback path, and initial paint)
     function update_values() {
-      $.get("/get_score", function(data) {
-        updateTeamChart(data.SCORES);
-        updatePlayerTable(data.INDIVIDUAL);
-      });
+      $.get("/get_score", function(data) { render_scores(data); });
+    }
+
+    // Live updates: prefer Server-Sent Events (instant push); fall back to polling.
+    // When SSE is unavailable or disabled server-side (/score_stream returns 204), the
+    // EventSource errors and we keep the original 10s poll — behavior is never worse.
+    var pollTimer = null;
+    function start_polling() {
+      if (pollTimer) return;
+      update_values();
+      pollTimer = window.setInterval(update_values, 10000);
+      set_live(false);
+    }
+    function stop_polling() {
+      if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    function start_live_updates() {
+      if (typeof EventSource === 'undefined') { start_polling(); return; }
+      var es;
+      try { es = new EventSource('/score_stream'); }
+      catch (e) { start_polling(); return; }
+
+      es.onmessage = function(ev) {
+        try { render_scores(JSON.parse(ev.data)); } catch (e) {}
+        stop_polling();      // SSE is driving updates; no need to also poll
+        set_live(true);
+      };
+      es.onopen = function() { set_live(true); };
+      es.onerror = function() {
+        set_live(false);
+        // readyState CLOSED => permanent failure (SSE disabled server-side / unsupported):
+        // fall back to polling. CONNECTING => the stream hit its lifetime cap and will
+        // auto-reconnect, so keep showing the last data and don't start a redundant poll.
+        if (es.readyState === EventSource.CLOSED) {
+          start_polling();
+        }
+      };
     }
 
     // Cyber/dark theme: recolor the leaderboard chart so axis labels and bars read
@@ -139,8 +201,9 @@
       myBarChart.update();
     }
 
+    // Always paint immediately, then start live updates (SSE with poll fallback).
     update_values();
-    window.setInterval(update_values, 10000);
+    start_live_updates();
 
   </script>
 

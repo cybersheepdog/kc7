@@ -60,11 +60,22 @@ def parse_pack(yaml_text: str) -> dict:
     return data
 
 
-def validate_pack(pack: dict) -> "list[str]":
-    """Validate an intel pack's structure + safety requirements. Returns error strings."""
-    from app.server.modules.attacks.attack_registry import is_valid_attack_id
+def validate_pack(pack: dict) -> "tuple[list, list]":
+    """
+    Validate an intel pack's structure, safety requirements, and that its references
+    *resolve* (#46): technique ids must be well-formed AND map to a game-implemented
+    technique. Returns ``(errors, warnings)``:
+      - errors block the import (structural / format problems, or a pack whose technique
+        ids resolve to NO game techniques — the imported actor would have no attacks);
+      - warnings are non-blocking (e.g. individual real technique ids the game doesn't
+        implement, which are simply skipped on import).
+    """
+    from app.server.modules.attacks.attack_registry import (
+        is_valid_attack_id, attacks_for_attack_id,
+    )
 
     errors = []
+    warnings = []
     if not pack.get("pack_name"):
         errors.append("missing 'pack_name'")
     if not (pack.get("source") or pack.get("provenance_url")):
@@ -74,17 +85,33 @@ def validate_pack(pack: dict) -> "list[str]":
     actor = pack.get("actor")
     if not isinstance(actor, dict):
         errors.append("missing 'actor' section")
-        return errors
+        return errors, warnings
 
     if not actor.get("name"):
         errors.append("actor: missing 'name'")
     gid = actor.get("attack_group_id")
     if gid and not _GROUP_ID_PATTERN.match(str(gid)):
         errors.append(f"actor: attack_group_id '{gid}' is not a valid MITRE ATT&CK group id (e.g. G0016)")
-    for tid in actor.get("attack_ids", []) or []:
-        if not is_valid_attack_id(str(tid)):
+
+    # Technique ids: well-formed AND resolvable to a game-implemented technique.
+    tids = [str(t) for t in (actor.get("attack_ids", []) or [])]
+    wellformed = []
+    for tid in tids:
+        if not is_valid_attack_id(tid):
             errors.append(f"actor: '{tid}' is not a valid MITRE ATT&CK technique id (e.g. T1566.002)")
-    return errors
+        else:
+            wellformed.append(tid)
+
+    resolved = [tid for tid in wellformed if attacks_for_attack_id(tid)]
+    for tid in wellformed:
+        if not attacks_for_attack_id(tid):
+            warnings.append(f"technique {tid} maps to no game-implemented technique — "
+                            f"it will be skipped on import")
+    if wellformed and not resolved:
+        errors.append("none of the pack's attack_ids map to a game-implemented technique — "
+                      "the imported actor would have no attacks")
+
+    return errors, warnings
 
 
 def pack_to_actor_config(pack: dict) -> "tuple[dict, list]":
@@ -116,6 +143,8 @@ def pack_to_actor_config(pack: dict) -> "tuple[dict, list]":
         "attack_group_id": actor.get("attack_group_id"),
         "origin": actor.get("origin"),
         "motivation": actor.get("motivation"),
+        # carry the pack's provenance URL so attribution challenges can cite the report (#45)
+        "report_url": pack.get("provenance_url"),
         "attacks": attacks,
     }
     # carry timing if provided (otherwise the author fills it in before saving)
@@ -146,10 +175,11 @@ def import_pack(yaml_text: str, allow_real: bool = False) -> dict:
         result["errors"] = [str(e)]
         return result
 
-    errors = validate_pack(pack)
+    errors, warnings = validate_pack(pack)
     if errors:
         result["errors"] = errors
         return result
+    result["warnings"].extend(warnings)
 
     config, notes = pack_to_actor_config(pack)
     result["actor_config"] = config

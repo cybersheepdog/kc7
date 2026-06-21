@@ -39,6 +39,7 @@ def build_challenges(actors, malware_by_name=None, get_spec=None) -> "list[dict]
 
     actors: list of dicts, each with keys:
         name (str), attribution (str|None), aliases (list[str]),
+        attack_group_id (str|None), report_url (str|None),
         domains (list[str]), ips (list[str]), sender_emails (list[str]),
         malware (list[str]), attacks (list[str])
     malware_by_name: {family_name: {"hashes": [...]}}
@@ -63,16 +64,42 @@ def build_challenges(actors, malware_by_name=None, get_spec=None) -> "list[dict]
         attacks = actor.get("attacks") or []
         mw_names = actor.get("malware") or []
 
-        # Attribution
+        # Attribution (the capstone — players attribute from TTP + indicator overlap,
+        # then corroborate against the referenced report) (#45)
         attribution = actor.get("attribution")
         aliases = actor.get("aliases") or []
-        if attribution or aliases:
-            accepted = [name] + ([attribution] if attribution else []) + list(aliases)
+        group_id = actor.get("attack_group_id")
+        report_url = actor.get("report_url")
+        if attribution or aliases or group_id:
+            # Accept the emulated name, the real group name, its aliases, and the
+            # ATT&CK group id — the #21 normalizer handles the ';' multi-accept + defang.
+            accepted = [name]
+            if attribution:
+                accepted.append(attribution)
+            accepted += list(aliases)
+            if group_id:
+                accepted.append(group_id)
+
+            # Ground the question in the evidence: the distinct ATT&CK techniques seen.
+            tech_ids = []
+            for atk in attacks:
+                spec = get_spec(atk)
+                if spec and spec.attack_id not in tech_ids:
+                    tech_ids.append(spec.attack_id)
+
+            desc = ("This intrusion's tradecraft and infrastructure match a known threat "
+                    "actor. Using the technique overlap"
+                    + (f" ({', '.join(tech_ids)})" if tech_ids else "")
+                    + ", the reused infrastructure, and the tooling, name the responsible "
+                      "threat actor (the group name, a known alias, or its MITRE ATT&CK "
+                      "group ID are all accepted).")
+            if report_url:
+                desc += f" Corroborate against the referenced reporting: {report_url}"
+
             challenges.append({
                 "name": f"Attribution — {name}",
                 "category": "Attribution",
-                "description": "Based on the techniques, tooling, and infrastructure, "
-                               "which threat actor is responsible for this campaign?",
+                "description": desc,
                 "answer": _join(accepted),
                 "value": 300,
             })
@@ -180,6 +207,8 @@ def gather_scenario_facts():
             "name": a.name,
             "attribution": cfg.get("attribution"),
             "aliases": cfg.get("aliases") or [],
+            "attack_group_id": cfg.get("attack_group_id"),
+            "report_url": cfg.get("report_url") or cfg.get("provenance_url") or cfg.get("reference"),
             "ips": list(getattr(a, "ips_list", []) or []),
             "domains": list(getattr(a, "domains_list", []) or []),
             "sender_emails": Actor.string_to_list(a.sender_emails) if a.sender_emails else [],

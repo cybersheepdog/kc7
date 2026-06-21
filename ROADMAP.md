@@ -350,6 +350,16 @@ Grounded in the current scoring path (`submit_answer`, `update_deny_list`,
 
 24. **Live auto-refresh standings.** `/get_score` is poll-only; push real-time updates
     (SSE/websocket or a persisted live view) so the room sees movement.
+    *Status: ✅ Done. Added a **Server-Sent Events** push path: a new `/score_stream`
+    endpoint streams leaderboard updates (change-detected, with heartbeats, fresh-committed
+    reads each tick, and a bounded lifetime so connections recycle). The leaderboard
+    computation was factored into a shared `_leaderboard_payload()` so the SSE push and the
+    `/get_score` poll rank identically. The scoreboard now prefers `EventSource` for instant
+    push and **transparently falls back to the existing 10s poll** when SSE is unavailable
+    or disabled — plus a pulsing "LIVE" indicator. Push is opt-in via `LIVE_SCORE_SSE_ENABLED`
+    (default off) because a long-lived SSE connection needs a threaded/multi-worker server;
+    when off, `/score_stream` returns 204 and the page polls exactly as before, so default
+    behavior is unchanged.*
 
 25. **Richer visualization.** Progress by kill-chain phase/category, a score-over-time
     line per team, first-blood markers, and rank numbers with movement deltas.
@@ -534,15 +544,33 @@ infrastructure inert and never ship real malware binaries.
     actor name/alias; the normalizer (#21) already accepts aliases via `;`-separated
     forms. Players attribute from TTP + indicator overlap, then corroborate against the
     referenced report.
+    *Status: ✅ Done. The auto-challenge generator (#11) now emits an **evidence-grounded
+    `Attribution` challenge** per actor: the accepted answer set is the emulated name +
+    real group name + every alias + the **ATT&CK group id** (`G####`), joined with `;` so
+    the #21 normalizer accepts any of them (defang-tolerant). The prompt is grounded in the
+    evidence rather than a giveaway — it names the **distinct ATT&CK techniques** observed
+    in the intrusion (so players attribute from the TTP overlap that #44's shared
+    infrastructure and #15's `technique_id`-tagged alerts make pivotable) and, when known,
+    links the **referenced report** for corroboration. A new optional `report_url` field
+    carries that link: added to `Actor.__init__` (config/display only, not a DB column,
+    same pattern as #40) and the validator's string fields, and the intel-pack importer
+    (#43) now carries a pack's `provenance_url` into it automatically. Worth 300 pts; fires
+    whenever any attribution metadata (name/alias/group id) is present.*
 
 46. **Validator extension.** Grow the config validator (#1) to check that an actor's
     declared ATT&CK group/technique IDs exist and that intel-pack references resolve.
-    *Status: 🚧 ATT&CK technique-id validation shipped — the registry now self-validates
-    that every technique carries a well-formed MITRE id (`assert_attack_ids_wellformed`,
-    wired into the validation pre-flight so a typo'd id fails fast), and a reusable
-    `validate_attack_ids()` helper is ready for actor-declared techniques. The actor
-    ATT&CK-group and intel-pack reference checks await the attribution metadata (#40) and
-    intel-packs (#43).*
+    *Status: ✅ Done. (1) Technique-id well-formedness: the registry self-validates that
+    every technique carries a valid MITRE id (`assert_attack_ids_wellformed`, in the
+    pre-flight so a typo fails fast), with a reusable `validate_attack_ids()` helper.
+    (2) Actor ATT&CK-group id: `validate_actor_config` checks `attack_group_id` matches
+    the `G####` format (#40), and now also checks the `report_url` (#45) is a real
+    http(s) URL. (3) **Intel-pack references resolve** (#43): `validate_pack` now returns
+    `(errors, warnings)` and verifies each technique id is not only well-formed but
+    *maps to a game-implemented technique* — unimplemented ids become non-blocking
+    warnings, and a pack whose ids resolve to **nothing** is a hard error (it would
+    import an actor with no attacks). Note: "exists" here means format-valid + resolvable
+    against the game's own technique set; cross-checking ids against MITRE's live group
+    catalog would need an offline ATT&CK snapshot (a possible future data-pack).*
 
 ---
 
@@ -620,7 +648,7 @@ Risk is the chance of disturbing existing behavior.
 | 19 | Consistent tie-break timestamps | S | Low | ✅ **Done** — teams now update `last_score_time` on every score (same rule as players: earliest to reach total wins) |
 | 20 | Recompute scores from solves | M | Low | ✅ **Done** — `/admin/score_audit` reconciles (challenge+indicator) vs stored; awards recorded (`mitigation_awards`); `?apply=1` destructively rebuilds scores + times from records |
 | 27 | `/get_score` N+1 + cache | S | Low | 🚧 N+1 fixed (eager-load `Users.team`) ✅; short cache deferred until live auto-refresh (#24) adds poll load |
-| 24 | Live auto-refresh standings | S–M | Low | SSE / poll / persisted live view |
+| 24 | Live auto-refresh standings | S–M | Low | ✅ Done — `/score_stream` SSE push (opt-in `LIVE_SCORE_SSE_ENABLED`) with automatic fallback to the existing poll; shared `_leaderboard_payload()`; LIVE indicator |
 | 25 | Richer visualization | M | Low | Phase breakdown, score-over-time, first blood, ranks |
 | 26 | Anti-cheat surfacing | M | Low | Pattern-flag from `AnswerAttempt` |
 | 22 | First-blood / dynamic scoring | M | Medium | ✅ **Done** — `dynamic_scoring` module; opt-in via `DYNAMIC_SCORING_ENABLED` (off by default), tunable min/decay/first-blood% |
@@ -646,12 +674,12 @@ Risk is the chance of disturbing existing behavior.
 |---|------|--------|------|-------|
 | 39 | Inert-indicator safety controls | S | Low | ✅ **Done** — safety toggles (off by default), centralized EICAR invariant + `defang()` + advisory checks |
 | 40 | Actor attribution metadata | S | Low | ✅ **Done** — attribution/aliases/group-id/origin/motivation on actor config; validated; surfaced in preview + instructor-key PDF |
-| 46 | Validator extension (ATT&CK / intel refs) | S | Very low | 🚧 ATT&CK-id validation done (registry self-check in pre-flight + `validate_attack_ids`); actor-group/intel-pack refs await #40/#43 |
+| 46 | Validator extension (ATT&CK / intel refs) | S | Very low | ✅ Done — technique-id self-check + group-id/report_url format + intel-pack reference resolution (`validate_pack` warns on unimplemented ids, errors when none resolve) |
 | 42 | Real malware families + historical hashes | M | Low | Inert hashes-as-strings only; provenance |
 | 41 | Real TTP tooling & command lines | M | Low | From ATT&CK / Atomic Red Team |
 | 43 | Intel-pack ingestion (ATT&CK STIX + abuse.ch) | M–L | Low | ✅ Format + importer + admin route + sample pack (provenance-required, defang-safe, validated); live feed-fetch is the follow-up |
 | 44 | Actor-consistent infra reuse (clustering) | M | Medium | ✅ v1: stable per-actor /16 ranges (opt-in `INFRA_REUSE_ENABLED`, collision-safe, fallback-on-error); domains/hashes already consistent. Registrar/cert reuse + ASN challenge are follow-ups |
-| 45 | Attribution scoring mechanic | M | Low | Actor-name answers; aliases via #21 |
+| 45 | Attribution scoring mechanic | M | Low | ✅ Done — evidence-grounded auto `Attribution` challenge (accepts name/alias/ATT&CK group id; cites observed techniques + links the referenced report via new `report_url`) |
 
 ---
 

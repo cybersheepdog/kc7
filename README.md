@@ -98,7 +98,7 @@ Answers are also **normalized before comparison** 🆕, so structurally-identica
 Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
 
 #### Leaderboard
-The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams and Players tabs. Rankings are sorted by score with tie-breaking by earliest score time.
+The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams and Players tabs. Rankings are sorted by score with tie-breaking by earliest score time. The board refreshes itself automatically: by default it polls every 10 seconds, and a pulsing **LIVE** badge shows it's updating. For near-real-time **push** updates (so a whole room sees movement the instant a score lands), enable `LIVE_SCORE_SSE_ENABLED` 🆕 in `config.py` — the page then streams updates over Server-Sent Events (`/score_stream`) and automatically falls back to polling if the stream is unavailable. (SSE needs a threaded/multi-worker server such as gunicorn or `flask run` with threading.)
 
 #### Appearance / Theme 🆕
 The app ships with a refreshed light theme by default. From their **profile page**, each user can toggle between the **Default (Light)** look and a **Cyber (Dark)** SOC-style theme (dark surfaces, cyan accent, monospace touches). The choice is remembered via a cookie and applied across every page — server-side, so there's no flash on load. It's a presentation-only override (a `theme-cyber` body class enabling `kc7-dark.css`); no game logic or data is affected.
@@ -157,6 +157,7 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Global challenges (no round assigned) appear to all players; round-scoped challenges appear only to that round's participants
 - **Answer Tester** 🆕 — an inline form to preview how an answer grades (with normalization / defang) before publishing a challenge
 - **Auto-generate** 🆕 (`/admin/generate_challenges`) — build a challenge set straight from the scenario's ground truth (malicious IPs, domains, phishing senders, malware families/hashes, attribution + aliases, and MITRE ATT&CK technique IDs). "Preview auto-gen" shows the proposed Q&A; "Auto-generate" creates the non-duplicate ones. Run it after generating a game, since most facts only exist once the data has been produced.
+- **Attribution challenges** 🆕 — the capstone of the set. For each attributed actor it asks players to name the threat actor and accepts the emulated name, the real group name, any alias, **or** the MITRE ATT&CK group ID (`G####`). The prompt is evidence-grounded — it names the actual techniques observed in the intrusion, so players attribute from TTP and infrastructure overlap rather than guessing — and, when the actor config carries a `report_url` (intel packs supply this from their provenance link automatically), it cites the referenced report for corroboration.
 
 #### Scenario PDF Export (`/admin/export/scenario_pdf`) 🆕
 - One-click export of the scenario as a polished PDF, generated from the live game data (company profile, the actors in play with their ATT&CK techniques, and the challenge set) — so it never drifts out of sync.

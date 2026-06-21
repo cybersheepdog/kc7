@@ -73,7 +73,7 @@ class Actor(Base):
                 post_exploit_commands:list=[], difficulty="HARD", watering_hole_domains:list=[], watering_hole_target_roles:list=[],
                 sender_domains:list=[],domain_depth=None,
                 attribution:str=None, aliases:list=None, attack_group_id:str=None,
-                origin:str=None, motivation:str=None):
+                origin:str=None, motivation:str=None, report_url:str=None):
 
         print(f"Instantiating actor {name}....")
         self.name = name
@@ -123,6 +123,9 @@ class Actor(Base):
         self._attack_group_id = attack_group_id
         self._origin          = origin
         self._motivation      = motivation
+        # Link to the public report the attribution is based on, for corroboration in
+        # attribution challenges (#45). Config/display only — not a DB column.
+        self._report_url      = report_url
 
 
     @property

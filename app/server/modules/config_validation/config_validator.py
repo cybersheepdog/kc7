@@ -66,7 +66,7 @@ _LIST_FIELDS = {
     "c2_processes", "aliases",
 }
 # Attribution fields that should be plain strings when present
-_STRING_FIELDS = {"attribution", "attack_group_id", "origin", "motivation"}
+_STRING_FIELDS = {"attribution", "attack_group_id", "origin", "motivation", "report_url"}
 # A well-formed MITRE ATT&CK *group* id, e.g. G0016
 _ATTACK_GROUP_PATTERN = __import__("re").compile(r"^G\d{4}$")
 # Fields that should be ints when present
@@ -188,6 +188,11 @@ def validate_actor_config(config: dict, source: str = "actor", actor_cls=None) -
     if group_id and not _ATTACK_GROUP_PATTERN.match(str(group_id)):
         errors.append(f"attack_group_id '{group_id}' is not a valid MITRE ATT&CK group id "
                       f"(expected like G0016)")
+
+    # Attribution report link (#45/#46): if present, must look like a URL
+    report_url = config.get("report_url")
+    if report_url and not str(report_url).lower().startswith(("http://", "https://")):
+        errors.append(f"report_url '{report_url}' should be a URL starting with http:// or https://")
 
     return [f"{source}: {e}" for e in errors]
 

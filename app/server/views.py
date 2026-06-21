@@ -706,57 +706,123 @@ def import_users_csv():
     return redirect(url_for("main.manage_users"))
 
 
-@main.route("/get_score", methods=["GET"])
-def get_score():
+def _leaderboard_payload():
     """
-    Return leaderboard data for both teams and individual players.
+    Compute the leaderboard data for both teams and individual players.
     Excludes the admin team (id=1) and its members.
     Ranking: higher score first; ties broken by who first scored (earlier wins).
+    Shared by /get_score (poll) and /score_stream (SSE push) so both rank identically.
     """
+    # Team leaderboard
+    teams = db.session.query(Team).filter(Team.id != 1).all()
+    team_data = [
+        {
+            "name":  t.name,
+            "score": t.score or 0,
+            "time":  t.last_score_time.isoformat() if t.last_score_time else None,
+        }
+        for t in teams
+    ]
+    team_data.sort(key=lambda x: (-x["score"], x["time"] or "9999-99-99"))
+
+    SCORES = {
+        "teams":  [t["name"]  for t in team_data],
+        "scores": [t["score"] for t in team_data],
+    }
+
+    # Individual leaderboard.
+    # Eager-load each player's team to avoid an N+1 query: p.team.name below would
+    # otherwise lazy-load the team once per player on every leaderboard poll.
+    from sqlalchemy.orm import joinedload
+    players = db.session.query(Users).options(joinedload(Users.team)).filter(Users.team_id != 1).all()
+    player_data = [
+        {
+            "username": p.username,
+            "team":     p.team.name if p.team else "--",
+            "score":    p.score or 0,
+            "time":     p.last_score_time.isoformat() if p.last_score_time else None,
+        }
+        for p in players
+    ]
+    player_data.sort(key=lambda x: (-x["score"], x["time"] or "9999-99-99"))
+
+    INDIVIDUAL = {
+        "players": [p["username"] for p in player_data],
+        "scores":  [p["score"]   for p in player_data],
+        "teams":   [p["team"]    for p in player_data],
+    }
+
+    return {"SCORES": SCORES, "INDIVIDUAL": INDIVIDUAL}
+
+
+@main.route("/get_score", methods=["GET"])
+def get_score():
+    """Return leaderboard data as JSON (poll endpoint; the scoreboard polls this)."""
     try:
-        # Team leaderboard
-        teams = db.session.query(Team).filter(Team.id != 1).all()
-        team_data = [
-            {
-                "name":  t.name,
-                "score": t.score or 0,
-                "time":  t.last_score_time.isoformat() if t.last_score_time else None,
-            }
-            for t in teams
-        ]
-        team_data.sort(key=lambda x: (-x["score"], x["time"] or "9999-99-99"))
-
-        SCORES = {
-            "teams":  [t["name"]  for t in team_data],
-            "scores": [t["score"] for t in team_data],
-        }
-
-        # Individual leaderboard.
-        # Eager-load each player's team to avoid an N+1 query: p.team.name below would
-        # otherwise lazy-load the team once per player on every leaderboard poll.
-        from sqlalchemy.orm import joinedload
-        players = db.session.query(Users).options(joinedload(Users.team)).filter(Users.team_id != 1).all()
-        player_data = [
-            {
-                "username": p.username,
-                "team":     p.team.name if p.team else "--",
-                "score":    p.score or 0,
-                "time":     p.last_score_time.isoformat() if p.last_score_time else None,
-            }
-            for p in players
-        ]
-        player_data.sort(key=lambda x: (-x["score"], x["time"] or "9999-99-99"))
-
-        INDIVIDUAL = {
-            "players": [p["username"] for p in player_data],
-            "scores":  [p["score"]   for p in player_data],
-            "teams":   [p["team"]    for p in player_data],
-        }
-
-        return jsonify(SCORES=SCORES, INDIVIDUAL=INDIVIDUAL)
+        payload = _leaderboard_payload()
+        return jsonify(SCORES=payload["SCORES"], INDIVIDUAL=payload["INDIVIDUAL"])
     except Exception as e:
         print(e)
         abort(404)
+
+
+@main.route("/score_stream", methods=["GET"])
+def score_stream():
+    """
+    Server-Sent Events stream that PUSHES leaderboard updates so the room sees movement
+    in near-real-time instead of waiting for the next poll (#24).
+
+    Opt-in via LIVE_SCORE_SSE_ENABLED (default off) because a long-lived SSE connection
+    needs a threaded/multi-worker server (gunicorn, or Flask run(threaded=True)). When the
+    flag is off this returns 204 so the browser's EventSource errors and the scoreboard
+    transparently falls back to the existing /get_score polling — nothing is lost.
+
+    The stream only emits when the data actually changes (heartbeats keep the connection
+    alive otherwise), reads fresh-committed data each tick, and self-terminates after a
+    bounded lifetime so connections recycle (EventSource auto-reconnects).
+    """
+    if not current_app.config.get("LIVE_SCORE_SSE_ENABLED"):
+        return ("", 204)
+
+    from flask import Response, stream_with_context
+    import json as _json
+    import time as _time
+
+    poll_seconds = float(current_app.config.get("LIVE_SCORE_SSE_POLL_SECONDS", 3) or 3)
+    max_lifetime = float(current_app.config.get("LIVE_SCORE_SSE_MAX_SECONDS", 120) or 120)
+
+    @stream_with_context
+    def gen():
+        last = None
+        started = _time.time()
+        # advise the client how soon to reconnect after we self-close
+        yield "retry: 3000\n\n"
+        while _time.time() - started < max_lifetime:
+            payload = None
+            try:
+                # end any open transaction so we read other requests' committed scores
+                db.session.remove()
+                payload = _leaderboard_payload()
+            except Exception as e:
+                print(f"score_stream: {e}")
+            if payload is not None:
+                data = _json.dumps(payload)
+                if data != last:
+                    last = data
+                    yield f"data: {data}\n\n"
+                else:
+                    yield ": heartbeat\n\n"
+            _time.sleep(poll_seconds)
+
+    return Response(
+        gen(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disable proxy buffering (nginx) so events flush
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @main.route("/getPermissionsList", methods=["GET"])

@@ -117,6 +117,16 @@ class ProductionConfig(BaseConfig):
     # technique-detection alerts are emitted and behavior is unchanged.
     TECHNIQUE_ALERTS_ENABLED = False
 
+    # --- Live scoreboard push via Server-Sent Events (off by default) — #24 ---
+    # When enabled, the leaderboard receives pushed updates over an SSE stream
+    # (/score_stream) so the room sees scoring movement in near-real-time instead of
+    # waiting for the next poll. Requires a threaded / multi-worker server (gunicorn, or
+    # Flask run(threaded=True)) since the connection is long-lived. When disabled, the
+    # scoreboard transparently falls back to polling /get_score (unchanged behavior).
+    LIVE_SCORE_SSE_ENABLED = False
+    LIVE_SCORE_SSE_POLL_SECONDS = 3      # how often the stream checks for changes
+    LIVE_SCORE_SSE_MAX_SECONDS = 120     # stream lifetime before the client reconnects
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7
