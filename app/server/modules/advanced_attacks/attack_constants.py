@@ -167,3 +167,21 @@ CLOUD_STORAGE_OBJECT_KEYS = [
     "legal/contracts.zip",
     "finance/q4_financials.xlsx",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Editable content packs (#4)
+# A YAML pack at app/game_configs/content_packs/realism.yaml may override any of the
+# lists above without code changes. The in-code values above are the defaults / fallback
+# — a missing pack, a missing key, or a malformed value keeps them. Guarded so a bad pack
+# can never break import.
+# ---------------------------------------------------------------------------
+try:
+    from app.server.modules.content_packs.content_pack import (
+        apply_overrides as _apply_overrides,
+        PACK_LIST_KEYS as _PACK_LIST_KEYS,
+        PACK_PAIR_KEYS as _PACK_PAIR_KEYS,
+    )
+    _apply_overrides(globals(), _PACK_LIST_KEYS, _PACK_PAIR_KEYS)
+except Exception as _e:  # never let a content pack break import
+    print("content_pack overrides skipped:", _e)

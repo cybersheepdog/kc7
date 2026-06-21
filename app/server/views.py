@@ -2154,6 +2154,12 @@ def run_history():
 # ---------------------------------------------------------------------------
 
 def _scenario_starter(kind):
+    if kind == "content_pack":
+        return ("# Realism content pack — override any of these lists to customize the\n"
+                "# realism of the advanced-attack generators. Omitted keys keep the\n"
+                "# built-in defaults. See app/game_configs/content_packs/realism.yaml.\n"
+                "domain_controllers:\n  - DC01\n  - DC02\n"
+                "internal_servers:\n  - SQL01\n  - FILESERVER01\n")
     if kind == "malware":
         return ("name: newmalware\n"
                 "filenames:\n  - example.exe\n"

@@ -23,6 +23,7 @@ import re
 KIND_DIRS = {
     "actor": "app/game_configs/actors",
     "malware": "app/game_configs/malware",
+    "content_pack": "app/game_configs/content_packs",
 }
 
 
@@ -66,6 +67,9 @@ def _summarize(kind: str, cfg: dict) -> str:
         return s
     if kind == "malware":
         return f"{len(cfg.get('filenames') or [])} file(s), {len(cfg.get('c2_processes') or [])} C2 cmd(s)"
+    if kind == "content_pack":
+        lists = sum(1 for v in cfg.values() if isinstance(v, list))
+        return f"realism content · {lists} list(s)"
     return ""
 
 
@@ -105,6 +109,9 @@ def validate_content(kind: str, cfg: dict) -> "list[str]":
         return validate_actor_config(cfg, source="(editor)")
     if kind == "malware":
         return validate_malware_config(cfg, source="(editor)")
+    if kind == "content_pack":
+        from app.server.modules.content_packs.content_pack import validate_pack_content
+        return [f"(editor): {e}" for e in validate_pack_content(cfg)]
     return [f"unknown scenario kind: {kind}"]
 
 

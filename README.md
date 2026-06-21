@@ -235,6 +235,8 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 #### Adversary Techniques (Actor Configs) 🆕
 Each malicious actor is defined by a YAML file in `app/game_configs/actors/`. The actor's `attacks:` list controls which techniques it carries out during data generation — add or remove a technique string to change what telemetry the scenario produces. No code changes are needed to re-mix techniques across actors.
 
+**Realism content pack** 🆕 — the building blocks the techniques draw from (discovery commands, Kerberos SPNs, internal server names, persistence/log-clearing commands, cloud apps, storage buckets, impossible-travel locations, …) live in an editable YAML pack at `app/game_configs/content_packs/realism.yaml`, so you can extend or localize the realism without touching code. The in-code lists remain the fallback: anything you omit (or a malformed entry) safely keeps the default, and a broken pack can never break startup. Set `KC7_DISABLE_CONTENT_PACK` to ignore the pack entirely. You can edit the pack **in the browser** from **Manage Scenario** (choose the `content_pack` type) — saves are validated first (it flags typo'd keys and wrong value shapes). Changes take effect the next time the game is generated.
+
 ```yaml
 # app/game_configs/actors/BluePhoenix.yaml
 attacks:

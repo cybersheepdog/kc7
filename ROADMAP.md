@@ -90,6 +90,22 @@ also emit as an answer key or narrate in a guide.
 4. **Externalize realism content into editable data packs.** Move the hardcoded
    command/SPN/wordlist constants to YAML/JSON content packs so non-developers can
    extend realism without touching code. Feeds the scenario wizard (#13).
+   *Status: ✅ Done. A YAML **content pack** (`app/game_configs/content_packs/realism.yaml`)
+   now holds the advanced-attack realism lists — discovery commands, Kerberos SPNs,
+   internal servers, PsExec binaries, log-clearing/persistence commands, payload
+   names/paths, cloud apps, storage buckets/keys, and impossible-travel geo locations —
+   editable without code changes. `modules/content_packs/content_pack.py` overlays it onto
+   `attack_constants.py`: the in-code lists stay as **defaults/fallback** and a constant is
+   overridden only when the pack supplies a present, well-formed, non-empty value, so a
+   missing pack / key / malformed value silently keeps the default (and a bad pack can
+   never break import — it's guarded; `KC7_DISABLE_CONTENT_PACK` is a kill switch).
+   **Proven by a parity test that the shipped pack reproduces the in-code defaults exactly
+   — zero behavior change** — while making the content fully editable. The scenario wizard
+   (#13) and generators draw from these lists automatically. The pack is also editable
+   **in-browser** via Manage Scenario (#3): `content_pack` is now a first-class edit kind
+   with its own validator (`validate_pack_content` — typo'd-key "did you mean?" + list/pair
+   type checks), so a save is validated before it's written. (Edits apply on the next app
+   start / game generation, since the overlay is applied at import.)*
 
 5. **Dry-run preview.** Build on `ADX_DEBUG_MODE` (which already prints instead of
    uploading): run one day for one actor and show per-table row counts plus sample
@@ -688,7 +704,7 @@ Risk is the chance of disturbing existing behavior.
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
 | 11 | Answer-key emission + challenge auto-population | M | Low | ✅ **Done** — `/admin/generate_challenges` builds `Challenge`s from live ground truth (IOCs, hashes, attribution, ATT&CK ids) + preview/button |
-| 4 | Externalize realism content into data packs | M | Low | Decouples content from code |
+| 4 | Externalize realism content into data packs | M | Low | ✅ Done — `realism.yaml` content pack overlays `attack_constants.py` (defaults as fallback, guarded, parity-tested = zero behavior change) |
 
 ### Phase 3 — Realistic campaigns
 | # | Item | Effort | Risk | Notes |

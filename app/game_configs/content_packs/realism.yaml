@@ -1,0 +1,129 @@
+# --------------------------------------------------------------------------
+# Realism content pack (#4)
+#
+# Edit these lists to extend or localize the realism of the advanced-attack
+# generators — no code changes needed. Anything you remove or omit falls back to
+# the built-in defaults in attack_constants.py, so a partial pack is fine.
+# Placeholders like {domain}, {payload_path}, {username}, {payload_name},
+# {ip_address}, {domain_name} are filled in at generation time — keep them as-is.
+#
+# (Set the KC7_DISABLE_CONTENT_PACK env var to ignore this file entirely.)
+# --------------------------------------------------------------------------
+
+# Dense host/domain reconnaissance burst (discovery:automated_recon)
+discovery_commands:
+  - 'net group "Domain Admins" /domain'
+  - 'net group "Enterprise Admins" /domain'
+  - 'nltest /dclist:contoso'
+  - 'nltest /domain_trusts'
+  - 'net user /domain'
+  - 'net accounts /domain'
+  - 'arp -a'
+  - 'ipconfig /all'
+  - 'whoami /groups'
+  - 'systeminfo'
+  - 'tasklist /v'
+  - 'net localgroup administrators'
+  - 'query user'
+  - 'route print'
+
+discovery_parent_processes:
+  - 'cmd.exe'
+  - 'powershell.exe'
+
+# High-value Service Principal Names for Kerberoasting (identity:kerberoasting)
+high_value_spns:
+  - 'MSSQLSvc/sql01.{domain}:1433'
+  - 'MSSQLSvc/sql-prod.{domain}:1433'
+  - 'HTTP/sharepoint.{domain}'
+  - 'HTTP/intranet.{domain}'
+  - 'CIFS/fileserver01.{domain}'
+  - 'LDAP/dc01.{domain}'
+  - 'TERMSRV/jumpbox01.{domain}'
+  - 'exchangeMDB/mail01.{domain}'
+
+domain_controllers:
+  - 'DC01'
+  - 'DC02'
+
+# Internal servers targeted by lateral movement (execution:psexec_lateral)
+internal_servers:
+  - 'SQL01'
+  - 'SQL-PROD'
+  - 'FILESERVER01'
+  - 'APP01'
+  - 'APP02'
+  - 'JUMPBOX01'
+  - 'HR-APP01'
+  - 'FINANCE01'
+  - 'BACKUP01'
+
+psexec_service_binaries:
+  - 'PSEXESVC.exe'
+  - 'PSEXESVC.exe'
+  - 'winsvc.exe'
+  - 'msupdate.exe'
+
+# "What the attacker did right before the lights went out" (evasion:log_clearing)
+pre_clearing_commands:
+  - 'net user svc_admin P@ssw0rd! /add /domain'
+  - 'net localgroup administrators svc_admin /add'
+  - 'reg save HKLM\SAM C:\Windows\Temp\sam.save'
+  - 'vssadmin delete shadows /all /quiet'
+
+# Persistence (persistence:scheduled_task / persistence:registry_run)
+scheduled_task_commands:
+  - 'schtasks.exe /create /tn "MicrosoftEdgeUpdateTask" /tr "{payload_path}" /sc daily /st 08:00 /ru SYSTEM'
+  - 'schtasks.exe /create /tn "GoogleUpdateTaskMachine" /tr "{payload_path}" /sc onlogon /ru SYSTEM'
+  - 'schtasks.exe /create /tn "OneDriveStandaloneUpdate" /tr "{payload_path}" /sc hourly /ru SYSTEM'
+
+registry_run_commands:
+  - 'reg.exe add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v EdgeUpdate /t REG_SZ /d "{payload_path}" /f'
+  - 'reg.exe add "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" /v SecurityHealth /t REG_SZ /d "{payload_path}" /f'
+  - 'reg.exe add "HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce" /v Update /t REG_SZ /d "{payload_path}" /f'
+
+persistence_payload_locations:
+  - 'C:\Users\{username}\AppData\Roaming\{payload_name}'
+  - 'C:\ProgramData\{payload_name}'
+  - 'C:\Windows\Temp\{payload_name}'
+
+persistence_payload_names:
+  - 'svchost-update.exe'
+  - 'winupdate.exe'
+  - 'edgehelper.exe'
+
+# Cloud (cloud:session_hijacking / token_theft / exfiltration_via_storage)
+cloud_applications:
+  - 'Office 365 SharePoint Online'
+  - 'Office 365 Exchange Online'
+  - 'Microsoft Teams'
+  - 'AWS S3 Console'
+  - 'Azure Portal'
+
+cloud_storage_buckets:
+  - 'contoso-finance-backups'
+  - 'contoso-hr-records'
+  - 'contoso-source-code'
+  - 'contoso-customer-data'
+
+cloud_storage_object_keys:
+  - 'exports/payroll_2023.csv'
+  - 'exports/customer_pii.csv'
+  - 'backups/database_dump.sql'
+  - 'hr/employee_records.xlsx'
+  - 'legal/contracts.zip'
+  - 'finance/q4_financials.xlsx'
+
+# Geo locations for impossible-travel sign-ins — each entry is [City, Country]
+home_locations:
+  - ['New York', 'United States']
+  - ['Chicago', 'United States']
+  - ['Austin', 'United States']
+  - ['Seattle', 'United States']
+
+impossible_travel_locations:
+  - ['Moscow', 'Russia']
+  - ['Beijing', 'China']
+  - ['Lagos', 'Nigeria']
+  - ['Tehran', 'Iran']
+  - ['Pyongyang', 'North Korea']
