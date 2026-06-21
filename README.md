@@ -167,6 +167,12 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Scope to a single round with `?round_id=N`.
 - Requires the optional `reportlab` package; if it isn't installed the export shows a friendly "install reportlab" message instead of failing.
 
+#### Game Guide & Instructor Key (`/admin/game_guide`) 🆕
+- A **Markdown** guide generated from the scenario config every time, so — like the PDF — it can't drift out of sync, with no extra dependencies (no `reportlab` needed).
+- **Player intel brief** (default): sets the scene from the company profile, lists the kill-chain stages in play, and spells out per-technique **learning objectives** — with no attribution, indicators, or answers given away.
+- **Instructor key** (`?variant=instructor`): adds attribution (aliases + ATT&CK group ID), a per-actor **campaign timeline** with the ordered kill-chain path and ATT&CK technique table, the indicators of compromise, and the full challenge **answer key**.
+- Add `?download=1` to save it as a `.md` file. Both variants are linked from the Manage Game tools panel.
+
 #### Scenario Dry-Run Preview (`/admin/preview_scenario`) 🆕
 - A pre-flight that reports what the current scenario will generate **without running the pipeline** — for each actor: the ATT&CK techniques that will fire, the ADX tables they populate, the number of active days, and an approximate event volume; plus the scenario-wide table union.
 - Lets an author sanity-check a scenario (and pair it with config validation) before committing to a full, slow generation run.

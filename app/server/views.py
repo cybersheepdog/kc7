@@ -1896,6 +1896,36 @@ def export_scenario_pdf():
     )
 
 
+@main.route("/admin/game_guide")
+@roles_required("Admin")
+@login_required
+def game_guide():
+    """
+    Auto-generated game guide & instructor key, in Markdown (#12) — generated from the
+    scenario config every time, so it can't drift like a hand-edited summary.
+      ?variant=instructor -> full instructor key (attribution, ATT&CK, timeline, IOCs, answers)
+      (default)           -> player intel brief (scene + objectives, no spoilers)
+      ?download=1         -> download as a .md file instead of viewing inline
+    """
+    from flask import Response
+    from app.server.modules.reporting.game_guide import gather_guide_facts, build_game_guide
+
+    instructor = request.args.get("variant", "player") == "instructor"
+    try:
+        company, actors, challenges = gather_guide_facts()
+        md = build_game_guide(company, actors, challenges, include_answers=instructor)
+    except Exception as e:
+        print("game_guide error: " + str(e))
+        flash("Could not generate the game guide: " + str(e), "error")
+        return redirect(url_for("main.manage_challenges"))
+
+    headers = {}
+    if request.args.get("download") in ("1", "true", "yes", "on"):
+        fname = "kc7_%s_guide.md" % ("instructor" if instructor else "player")
+        headers["Content-Disposition"] = "attachment; filename=" + fname
+    return Response(md, mimetype="text/markdown; charset=utf-8", headers=headers)
+
+
 @main.route("/admin/preview_scenario")
 @roles_required("Admin")
 @login_required

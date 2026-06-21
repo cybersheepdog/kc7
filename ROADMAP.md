@@ -179,6 +179,19 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
     to polish the prose.
     - **Depends on:** ATT&CK tagging (#9), campaign model (#6), answer-key emission
       (#11).
+    *Status: ✅ Done. New `modules/reporting/game_guide.py` builds a **Markdown** guide
+    straight from config (dependency-free; complements the ReportLab PDF in
+    `scenario_document.py`). Pure `build_game_guide(company, actors, challenges,
+    include_answers)` emits two variants: a **player intel brief** (scenario scene from
+    the company profile + the kill-chain stages in play + per-technique **learning
+    objectives**, with NO attribution/IOC/answer spoilers) and an **instructor key**
+    (attribution + aliases + ATT&CK group id, a per-actor **campaign timeline** with the
+    ordered kill-chain path and ATT&CK technique table, the indicators of compromise, and
+    the full challenge **answer key**). `gather_guide_facts()` reuses the #11 fact
+    gatherer (+ each actor's activity window). Served at `/admin/game_guide`
+    (`?variant=instructor`, `?download=1`) and linked from the Manage Game tools panel.
+    Because it's regenerated from config each time, it can't drift. (LLM polish pass
+    remains an optional future add.)*
 
 13. **Scenario story wizard for admins.** A guided flow: pick an archetype
     (espionage, ransomware, insider, supply-chain), targets, timeline, and
@@ -659,7 +672,7 @@ Risk is the chance of disturbing existing behavior.
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
 | 3 | "Manage Scenario" admin GUI (+ clone) | M–L | Low | ✅ **Done** — `/admin/manage_scenario` lists/edits/clones/deletes actor & malware YAML in-browser; validates before save |
-| 12 | Auto-generated game guide & instructor key | M | Low | From config; ends `summary.txt` drift |
+| 12 | Auto-generated game guide & instructor key | M | Low | ✅ Done — `game_guide.py` Markdown player brief + instructor key (objectives, campaign timeline, ATT&CK, IOCs, answer key) at `/admin/game_guide`; generated-from-config |
 | 47 | Scenario PDF export (admin) | M | Low | ✅ **Done** — `/admin/export/scenario_pdf`; player packet + instructor key; reportlab guarded |
 | 13 | Scenario story wizard | L | Low | Capstone; depends on most prior items |
 
