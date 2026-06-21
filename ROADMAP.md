@@ -201,6 +201,19 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
     authoring (#1–#5) and realism (#6–#10) together.
     - **Depends on:** validation (#1), registry (#2), content packs (#4), GUI (#3),
       auto-challenges (#11), auto-guide (#12).
+    *Status: ✅ Done. New `modules/scenario_admin/scenario_wizard.py` with four
+    **archetypes** (espionage / ransomware / insider / supply-chain), each a coherent
+    technique chain + motivation + malware flag. Pure `build_wizard_configs(params)`
+    scaffolds a **validator-clean** actor config (filling the required fields each chosen
+    technique needs — e.g. `watering_hole_domains` for watering-hole attacks — plus
+    theme-derived domain/sender/subject content and attribution metadata) and an optional
+    linked **malware** config. The `/admin/scenario_wizard` route (a guided form, linked
+    from Manage Game) builds them, saves both through the config validator via
+    `scenario_admin` (malware first so the actor's reference resolves), audits the action
+    (#37), and points the admin to one-click challenge (#11) + guide (#12) generation.
+    Verified every archetype produces configs whose keys/required-fields satisfy the real
+    `Actor`/`Malware` constructor signatures. (LLM-assisted theme/narrative authoring
+    remains the optional future add.)*
 
 47. **Scenario PDF export (admin).** The PDF deliverable form of #12: an admin export
     that assembles the scenario framing (company, actors + their ATT&CK techniques from
@@ -674,7 +687,7 @@ Risk is the chance of disturbing existing behavior.
 | 3 | "Manage Scenario" admin GUI (+ clone) | M–L | Low | ✅ **Done** — `/admin/manage_scenario` lists/edits/clones/deletes actor & malware YAML in-browser; validates before save |
 | 12 | Auto-generated game guide & instructor key | M | Low | ✅ Done — `game_guide.py` Markdown player brief + instructor key (objectives, campaign timeline, ATT&CK, IOCs, answer key) at `/admin/game_guide`; generated-from-config |
 | 47 | Scenario PDF export (admin) | M | Low | ✅ **Done** — `/admin/export/scenario_pdf`; player packet + instructor key; reportlab guarded |
-| 13 | Scenario story wizard | L | Low | Capstone; depends on most prior items |
+| 13 | Scenario story wizard | L | Low | ✅ Done — `/admin/scenario_wizard`: 4 archetypes scaffold a validator-clean actor (+ malware) config, then one-click challenges (#11) + guide (#12) |
 
 ### Phase 5 — Performance & architecture (as scale demands)
 | # | Item | Effort | Risk | Notes |

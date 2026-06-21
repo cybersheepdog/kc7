@@ -136,6 +136,10 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - **Scenario & Scoring Tools** panel 🆕 — one-click links to the Scenario Preview (dry run), the Scenario PDF exports (player packet / instructor answer key), the Score Audit, and the **Run History**.
 - **Run History** (`/admin/run_history`) 🆕 — a log of each data-generation run: when it started/finished, how long it took, success / error / **cancelled**, the scenario window, and **per-table ingested-row counts**. Plain text, or `?format=json`.
 
+#### Scenario Story Wizard (`/admin/scenario_wizard`) 🆕
+- The fastest way to stand up a new scenario: pick an **archetype** (espionage, ransomware, insider, or supply-chain), give the actor a name, timeline, and a few optional attribution details, and the wizard scaffolds a **consistent, validated** actor config — with a coherent technique chain and all the fields those techniques require — plus an optional linked malware config.
+- It saves everything through the same config validator as hand-authored configs (so a scaffold can never be invalid), then points you to one-click **auto-generate challenges** and **game guide** to finish the scenario. Linked from the Manage Game tools panel.
+
 #### Manage Scenario (`/admin/manage_scenario`) 🆕
 - Author the **scenario content** — actor and malware configs — from the browser instead of hand-editing YAML files on disk.
 - Lists every config with a quick summary, and lets you **edit, clone, or delete** them in an in-browser YAML editor. Clone is the fastest way to spin up a new actor from an existing one.

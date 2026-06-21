@@ -1,0 +1,167 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-hat-wizard mr-2 text-primary"></i>Scenario Story Wizard
+  </h1>
+  <a href="/admin/manage_scenario" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-drafting-compass mr-1"></i> Manage Scenario
+  </a>
+</div>
+
+<p class="text-muted">
+  Pick an archetype and a few details; the wizard scaffolds a consistent, <b>validated</b>
+  actor (and optional malware) config with a coherent technique chain. Afterwards, use the
+  Manage Game tools to auto-generate matching challenges and the game guide.
+</p>
+
+{% if errors %}
+<div class="alert alert-danger">
+  <b>Couldn't scaffold the scenario:</b>
+  <ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" action="/admin/scenario_wizard">
+  <!-- Archetype -->
+  <div class="card shadow mb-3">
+    <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">1 · Archetype</h6></div>
+    <div class="card-body">
+      <div class="row">
+        {% for key, label, desc, attacks in archetypes %}
+        <div class="col-md-6 mb-2">
+          <label class="d-flex align-items-start p-2 border rounded" style="cursor:pointer;">
+            <input type="radio" name="archetype" value="{{ key }}" class="mt-1 mr-2 arch-radio"
+                   data-attacks="{{ attacks|join(',') }}"
+                   {{ 'checked' if form.get('archetype') == key else '' }} required>
+            <span>
+              <strong>{{ label }}</strong>
+              <span class="d-block text-muted small">{{ desc }}</span>
+              <span class="d-block small mt-1">{% for a in attacks %}<code class="mr-1">{{ a }}</code>{% endfor %}</span>
+            </span>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Basics -->
+  <div class="card shadow mb-3">
+    <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">2 · Basics</h6></div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group col-md-6">
+          <label class="small font-weight-bold mb-1">Actor name *</label>
+          <input type="text" name="name" class="form-control" required
+                 value="{{ form.get('name','') }}" placeholder="e.g. CrimsonViper">
+        </div>
+        <div class="form-group col-md-6">
+          <label class="small font-weight-bold mb-1">Theme word <span class="text-muted">(for domains/email)</span></label>
+          <input type="text" name="theme" class="form-control"
+                 value="{{ form.get('theme','') }}" placeholder="defaults to the actor name">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group col-md-3">
+          <label class="small font-weight-bold mb-1">Start date *</label>
+          <input type="date" name="activity_start_date" class="form-control" required value="{{ form.get('activity_start_date','') }}">
+        </div>
+        <div class="form-group col-md-3">
+          <label class="small font-weight-bold mb-1">End date *</label>
+          <input type="date" name="activity_end_date" class="form-control" required value="{{ form.get('activity_end_date','') }}">
+        </div>
+        <div class="form-group col-md-3">
+          <label class="small font-weight-bold mb-1">Start hour</label>
+          <input type="number" name="activity_start_hour" class="form-control" min="0" max="23" value="{{ form.get('activity_start_hour','9') }}">
+        </div>
+        <div class="form-group col-md-3">
+          <label class="small font-weight-bold mb-1">Workday length (hrs)</label>
+          <input type="number" name="workday_length_hours" class="form-control" min="1" max="24" value="{{ form.get('workday_length_hours','8') }}">
+        </div>
+      </div>
+      <div class="form-check">
+        <input type="checkbox" class="form-check-input" id="include_malware" name="include_malware" value="1"
+               {{ 'checked' if form.get('include_malware') else '' }}>
+        <label class="form-check-label small" for="include_malware">
+          Scaffold a malware config the actor uses (default depends on archetype)
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Attribution (optional) -->
+  <div class="card shadow mb-3">
+    <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">3 · Attribution <span class="text-muted small">(optional)</span></h6></div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label class="small font-weight-bold mb-1">Attribution</label>
+          <input type="text" name="attribution" class="form-control" value="{{ form.get('attribution','') }}" placeholder="e.g. APT29">
+        </div>
+        <div class="form-group col-md-4">
+          <label class="small font-weight-bold mb-1">Aliases <span class="text-muted">(comma-sep)</span></label>
+          <input type="text" name="aliases" class="form-control" value="{{ form.get('aliases','') }}" placeholder="Cozy Bear, Nobelium">
+        </div>
+        <div class="form-group col-md-4">
+          <label class="small font-weight-bold mb-1">ATT&amp;CK group id</label>
+          <input type="text" name="attack_group_id" class="form-control" value="{{ form.get('attack_group_id','') }}" placeholder="G0016">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label class="small font-weight-bold mb-1">Origin</label>
+          <input type="text" name="origin" class="form-control" value="{{ form.get('origin','') }}">
+        </div>
+        <div class="form-group col-md-8">
+          <label class="small font-weight-bold mb-1">Report URL</label>
+          <input type="text" name="report_url" class="form-control" value="{{ form.get('report_url','') }}" placeholder="https://attack.mitre.org/groups/G0016/">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Techniques (optional override) + targets -->
+  <div class="card shadow mb-3">
+    <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">4 · Techniques &amp; targets</h6></div>
+    <div class="card-body">
+      <p class="small text-muted mb-2">
+        These are pre-selected from your archetype — adjust if you like. (Leaving all unchecked also uses the archetype default.)
+      </p>
+      <div class="row">
+        {% for a in all_attacks %}
+        <div class="col-md-4">
+          <div class="form-check">
+            <input class="form-check-input attack-box" type="checkbox" name="attacks" value="{{ a }}" id="atk_{{ loop.index }}">
+            <label class="form-check-label small" for="atk_{{ loop.index }}"><code>{{ a }}</code></label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <hr>
+      <div class="form-group mb-0">
+        <label class="small font-weight-bold mb-1">Watering-hole / lateral target roles <span class="text-muted">(comma-sep)</span></label>
+        <input type="text" name="watering_hole_target_roles" class="form-control" value="{{ form.get('watering_hole_target_roles','') }}" placeholder="IT, Finance, HR">
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary"><i class="fas fa-magic mr-1"></i> Scaffold scenario</button>
+</form>
+
+<script>
+  // Pre-check the selected archetype's default techniques for convenience.
+  function applyArchetype(radio) {
+    var defaults = (radio.getAttribute('data-attacks') || '').split(',').filter(Boolean);
+    document.querySelectorAll('.attack-box').forEach(function(cb) {
+      cb.checked = defaults.indexOf(cb.value) !== -1;
+    });
+  }
+  document.querySelectorAll('.arch-radio').forEach(function(r) {
+    r.addEventListener('change', function() { applyArchetype(r); });
+    if (r.checked) applyArchetype(r);
+  });
+</script>
+
+{% endblock %}

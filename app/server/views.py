@@ -2174,6 +2174,86 @@ def scenario_delete():
     return redirect(url_for("main.manage_scenario"))
 
 
+@main.route("/admin/scenario_wizard", methods=["GET", "POST"])
+@roles_required("Admin")
+@login_required
+def scenario_wizard():
+    """
+    Scenario story wizard (#13): pick an archetype + a few details and scaffold a
+    consistent, validated actor (+ optional malware) config. On success the admin can
+    one-click auto-generate matching challenges (#11) and the game guide (#12).
+    """
+    from app.server.modules.scenario_admin.scenario_wizard import (
+        archetype_choices, build_wizard_configs,
+    )
+    from app.server.modules.scenario_admin import scenario_admin as sa
+    from app.server.modules.attacks.attack_registry import all_attack_strings
+
+    choices = archetype_choices()
+
+    if request.method == "GET":
+        return render_template("admin/scenario_wizard.html",
+                               archetypes=choices, all_attacks=all_attack_strings(),
+                               form={}, errors=[])
+
+    def _split(field):
+        return [s.strip() for s in (request.form.get(field, "") or "").replace("\n", ",").split(",") if s.strip()]
+
+    params = {
+        "archetype": request.form.get("archetype", ""),
+        "name": request.form.get("name", "").strip(),
+        "attribution": request.form.get("attribution", "").strip(),
+        "aliases": _split("aliases"),
+        "attack_group_id": request.form.get("attack_group_id", "").strip(),
+        "origin": request.form.get("origin", "").strip(),
+        "report_url": request.form.get("report_url", "").strip(),
+        "activity_start_date": request.form.get("activity_start_date", "").strip(),
+        "activity_end_date": request.form.get("activity_end_date", "").strip(),
+        "activity_start_hour": request.form.get("activity_start_hour") or 9,
+        "workday_length_hours": request.form.get("workday_length_hours") or 8,
+        "watering_hole_target_roles": _split("watering_hole_target_roles"),
+        "theme": request.form.get("theme", "").strip(),
+        "include_malware": request.form.get("include_malware") in ("1", "on", "true", "yes"),
+    }
+    # attacks: use any explicitly checked techniques, else the archetype default
+    chosen = request.form.getlist("attacks")
+    if chosen:
+        params["attacks"] = chosen
+
+    errors = []
+    try:
+        actor_cfg, malware_cfg, notes = build_wizard_configs(params)
+    except ValueError as e:
+        errors = [str(e)]
+        return render_template("admin/scenario_wizard.html", archetypes=choices,
+                               all_attacks=all_attack_strings(), form=request.form, errors=errors)
+
+    import yaml as _yaml
+    # Save malware first so the actor's reference resolves, then the actor — both validated.
+    if malware_cfg:
+        mw_name = malware_cfg["name"] + ".yaml"
+        mw_errs = sa.save_file("malware", mw_name, _yaml.safe_dump(malware_cfg, sort_keys=False))
+        errors += ["malware: " + e for e in (mw_errs or [])]
+    actor_name = actor_cfg["name"] + ".yaml"
+    actor_errs = sa.save_file("actor", actor_name, _yaml.safe_dump(actor_cfg, sort_keys=False))
+    errors += ["actor: " + e for e in (actor_errs or [])]
+
+    if errors:
+        return render_template("admin/scenario_wizard.html", archetypes=choices,
+                               all_attacks=all_attack_strings(), form=request.form, errors=errors)
+
+    record_admin_action("config.wizard", target="actor/%s" % actor_name,
+                        detail="Scaffolded %s scenario" % params["archetype"])
+    msg = "Scaffolded actor '%s' (%d techniques%s)." % (
+        actor_cfg["name"], len(actor_cfg.get("attacks", [])),
+        " + malware" if malware_cfg else "")
+    if notes:
+        msg += " " + " ".join(notes)
+    msg += " Next: auto-generate challenges and the game guide from the Manage Game tools."
+    flash(msg, "success")
+    return redirect(url_for("main.manage_scenario", kind="actor", name=actor_name))
+
+
 @main.route("/admin/generate_challenges", methods=["GET", "POST"])
 @roles_required("Admin")
 @login_required
