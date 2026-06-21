@@ -290,6 +290,51 @@ class Solve(AuthBase):
         return '<Solve challenge=%r user=%r>' % (self.challenge_id, self.user_id)
 
 
+class ChallengeGating(AuthBase):
+    """
+    Optional hint + unlock rules for a challenge (#32). Kept in a SEPARATE table (not new
+    columns on `challenges`) so it auto-creates cleanly; a challenge with no row here
+    behaves exactly as before — no hint, never locked.
+    """
+    __tablename__ = "challenge_gating"
+
+    challenge_id    = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False, unique=True)
+    hint            = db.Column(db.Text, nullable=True)
+    hint_cost       = db.Column(db.Integer, nullable=False, default=0)
+    unlock_at       = db.Column(db.DateTime, nullable=True)                       # timed unlock
+    prerequisite_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=True)  # unlocks after this is solved
+
+    challenge    = db.relationship('Challenge', foreign_keys=[challenge_id],
+                                   backref=db.backref('gating', uselist=False))
+    prerequisite = db.relationship('Challenge', foreign_keys=[prerequisite_id])
+
+    def __init__(self, challenge_id, hint=None, hint_cost=0, unlock_at=None, prerequisite_id=None):
+        self.challenge_id    = challenge_id
+        self.hint            = hint or None
+        self.hint_cost       = int(hint_cost or 0)
+        self.unlock_at       = unlock_at
+        self.prerequisite_id = prerequisite_id or None
+
+
+class HintReveal(AuthBase):
+    """Records that a user revealed a challenge's hint (so the cost is charged once)."""
+    __tablename__  = "hint_reveals"
+    __table_args__ = (
+        db.UniqueConstraint('challenge_id', 'user_id', name='uq_hint_challenge_user'),
+    )
+
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
+    user_id      = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
+    cost         = db.Column(db.Integer, nullable=False, default=0)
+    revealed_at  = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, challenge_id, user_id, cost=0):
+        self.challenge_id = challenge_id
+        self.user_id      = user_id
+        self.cost         = int(cost or 0)
+        self.revealed_at  = datetime.datetime.now()
+
+
 class MitigationAward(AuthBase):
     """
     Records each correct indicator (mitigation) award.

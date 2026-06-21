@@ -28,6 +28,9 @@
       <div class="accordion" id="accordion-{{ loop.index }}">
         {% for ch in by_category[cat] %}
         {% set solved = ch.id in solved_ids %}
+        {% set g = gate_info.get(ch.id, {}) %}
+        {% set locked = g.get('locked') and not solved %}
+        {% set hint = g.get('hint', {}) %}
         <div class="card mb-0 border-0 border-bottom">
           <div class="card-header bg-white" id="heading-{{ ch.id }}">
             <div class="d-flex align-items-center justify-content-between py-1">
@@ -38,10 +41,13 @@
                       aria-controls="collapse-{{ ch.id }}">
                 {% if solved %}
                   <i class="fas fa-check-circle text-success mr-2"></i>
+                {% elif locked %}
+                  <i class="fas fa-lock text-muted mr-2"></i>
                 {% else %}
                   <i class="far fa-circle text-muted mr-2"></i>
                 {% endif %}
                 {{ ch.name }}
+                {% if locked %}<span class="badge badge-light border ml-2"><i class="fas fa-lock mr-1"></i>{{ g.get('message') }}</span>{% endif %}
               </button>
               <span class="badge badge-{{ 'success' if solved else 'primary' }} ml-3">
                 {{ ch.value }} pts
@@ -53,9 +59,27 @@
                data-parent="#accordion-{{ loop.index }}">
             <div class="card-body bg-light">
               <p class="mb-3">{{ ch.description }}</p>
+
+              {% if hint.get('has_hint') %}
+              <div class="mb-3" id="hint-wrap-{{ ch.id }}">
+                {% if hint.get('revealed') %}
+                  <div class="alert alert-warning py-2 mb-0"><i class="fas fa-lightbulb mr-1"></i> {{ hint.get('text') }}</div>
+                {% else %}
+                  <button class="btn btn-sm btn-outline-warning reveal-hint" data-challenge-id="{{ ch.id }}"
+                          {% if hint.get('cost') %}onclick="return confirm('Reveal this hint for -{{ hint.get('cost') }} points?');"{% endif %}>
+                    <i class="fas fa-lightbulb mr-1"></i> Reveal hint{% if hint.get('cost') %} (&minus;{{ hint.get('cost') }} pts){% endif %}
+                  </button>
+                {% endif %}
+              </div>
+              {% endif %}
+
               {% if solved %}
               <div class="alert alert-success mb-0 py-2">
                 <i class="fas fa-check mr-1"></i> You already solved this challenge!
+              </div>
+              {% elif locked %}
+              <div class="alert alert-secondary mb-0 py-2">
+                <i class="fas fa-lock mr-1"></i> Locked — {{ g.get('message') }}
               </div>
               {% else %}
               <form class="challenge-form" data-challenge-id="{{ ch.id }}">
@@ -82,6 +106,27 @@
   {% endfor %}
 
   <script>
+    // Reveal a hint (#32): charges the cost once, then shows the text in place.
+    $(document).on('click', '.reveal-hint', function() {
+      var btn = $(this);
+      var cid = btn.data('challenge-id');
+      btn.prop('disabled', true);
+      $.post('/reveal_hint', { challenge_id: cid }, function(data) {
+        if (data && data.ok) {
+          $('#hint-wrap-' + cid).html(
+            '<div class="alert alert-warning py-2 mb-0"><i class="fas fa-lightbulb mr-1"></i> '
+            + $('<div>').text(data.hint).html() + '</div>');
+          if (data.charged) {
+            toastr['info']('Hint revealed (-' + data.charged + ' pts). Score: '
+              + Number(data.user_score).toLocaleString());
+          }
+        } else {
+          btn.prop('disabled', false);
+          toastr['error']((data && data.message) || 'Could not reveal hint.');
+        }
+      }).fail(function() { btn.prop('disabled', false); toastr['error']('Network error.'); });
+    });
+
     $(document).on('submit', '.challenge-form', function(e) {
       e.preventDefault();
       var form       = $(this);
@@ -125,6 +170,10 @@
               counter.text((parseInt(parts[0].trim()) + 1) + ' / ' + parts[1].trim());
             }
           }
+        } else if (data.locked) {
+          toastr['warning'](data.message || 'This challenge is locked.');
+          feedback.html('<div class="alert alert-secondary py-2 mb-0"><i class="fas fa-lock mr-1"></i> '
+            + $('<div>').text(data.message || 'Locked.').html() + '</div>');
         } else {
           toastr['error']('Incorrect answer. Try again!');
           feedback.html('<div class="alert alert-danger py-2 mb-0"><i class="fas fa-times mr-1"></i> Incorrect. Try again!</div>');

@@ -13,7 +13,7 @@ from sqlalchemy import asc
 from sqlalchemy.sql.expression import func, select
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
-from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig
+from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal
 from app.server.modules.audit.audit_log import record_admin_action
 from app.server.modules.organization.Company import Company, Employee
 from app.server.modules.clock.Clock import Clock
@@ -1042,6 +1042,21 @@ def challenges():
         for s in Solve.query.filter_by(user_id=current_user.id).all()
     }
 
+    # Hints & gating (#32): per-challenge lock state + hint info. Challenges without a
+    # gating row are never locked and have no hint, so this is purely additive.
+    from app.server.modules.gating.gating import evaluate as _evaluate_gate, hint_state as _hint_state
+    gating_rows = {g.challenge_id: g for g in ChallengeGating.query.all()}
+    revealed_ids = {h.challenge_id for h in HintReveal.query.filter_by(user_id=current_user.id).all()}
+    names = {c.id: c.name for c in all_challenges}
+    now = datetime.now()
+    gate_info = {}
+    for ch in all_challenges:
+        g = gating_rows.get(ch.id)
+        prereq_name = names.get(g.prerequisite_id) if (g and g.prerequisite_id) else None
+        lock = _evaluate_gate(g, solved_ids, now, prereq_name=prereq_name)
+        hint = _hint_state(g, ch.id in revealed_ids, hint_text=(g.hint if g else None))
+        gate_info[ch.id] = {"locked": lock["locked"], "message": lock["message"], "hint": hint}
+
     # Group by category
     from collections import defaultdict
     by_category = defaultdict(list)
@@ -1054,6 +1069,7 @@ def challenges():
         by_category=by_category,
         categories=categories,
         solved_ids=solved_ids,
+        gate_info=gate_info,
     )
 
 
@@ -1101,6 +1117,24 @@ def submit_answer():
                 team_score=current_user.team.score or 0,
                 message="You already solved this challenge.",
             )
+
+        # Hints & gating (#32): if this challenge has gating rules, enforce locks before
+        # accepting an answer. Challenges with no gating row are never locked.
+        _gate = ChallengeGating.query.filter_by(challenge_id=challenge_id).first()
+        if _gate is not None:
+            from app.server.modules.gating.gating import evaluate as _evaluate_gate
+            _solved = {s.challenge_id for s in Solve.query.filter_by(user_id=current_user.id).all()}
+            _prereq_name = None
+            if _gate.prerequisite_id:
+                _pq = db.session.get(Challenge, _gate.prerequisite_id)
+                _prereq_name = _pq.name if _pq else None
+            _lock = _evaluate_gate(_gate, _solved, datetime.now(), prereq_name=_prereq_name)
+            if _lock["locked"]:
+                return jsonify(correct=False, already_solved=False, points_earned=0,
+                               user_score=current_user.score or 0,
+                               team_score=current_user.team.score or 0,
+                               locked=True,
+                               message="Locked — " + (_lock["message"] or "not available yet."))
 
         if not challenge.check_answer(submitted):
             _attempt = AnswerAttempt(challenge_id=challenge_id,
@@ -1174,6 +1208,44 @@ def submit_answer():
         print("submit_answer error: " + str(e))
         return jsonify(correct=False, already_solved=False, points_earned=0,
                        user_score=0, team_score=0, message="Server error.")
+
+
+@main.route("/reveal_hint", methods=["POST"])
+@login_required
+def reveal_hint():
+    """
+    Reveal a challenge's hint (#32). The hint cost is charged once per user (recorded in
+    HintReveal); revealing again is free and just returns the text. Returns JSON
+    {ok, hint, cost, charged, user_score, team_score}.
+    """
+    try:
+        challenge_id = int(request.form["challenge_id"])
+        gate = ChallengeGating.query.filter_by(challenge_id=challenge_id).first()
+        if not gate or not gate.hint:
+            return jsonify(ok=False, message="No hint available for this challenge.")
+
+        already = HintReveal.query.filter_by(challenge_id=challenge_id,
+                                             user_id=current_user.id).first()
+        charged = 0
+        if not already:
+            charged = int(gate.hint_cost or 0)
+            if charged:
+                # cost comes off both the player and their team, mirroring how a solve
+                # adds to both (floored at zero so a hint can't push a score negative).
+                current_user.score = max(0, (current_user.score or 0) - charged)
+                if current_user.team:
+                    current_user.team.score = max(0, (current_user.team.score or 0) - charged)
+            db.session.add(HintReveal(challenge_id=challenge_id, user_id=current_user.id, cost=charged))
+            db.session.commit()
+
+        return jsonify(ok=True, hint=gate.hint, cost=int(gate.hint_cost or 0),
+                       charged=charged,
+                       user_score=current_user.score or 0,
+                       team_score=(current_user.team.score or 0) if current_user.team else 0)
+    except Exception as e:
+        print("reveal_hint error:", e)
+        db.session.rollback()
+        return jsonify(ok=False, message="Could not reveal hint.")
 
 
 @main.route("/admin/manage_challenges")
@@ -2687,6 +2759,79 @@ def answer_tester():
                    "answer": c.answer or "", "value": c.value or 0}
                   for c in Challenge.query.order_by(Challenge.name).all()]
     return render_template("admin/answer_tester.html", challenges=challenges)
+
+
+@main.route("/admin/challenge_gating", methods=["GET"])
+@login_required
+@roles_required("Admin")
+def challenge_gating():
+    """Configure hints & gating (#32) per challenge: hint text + cost, timed unlock, and
+    a prerequisite challenge."""
+    challenge_list = Challenge.query.order_by(Challenge.category, Challenge.name).all()
+    gating = {g.challenge_id: g for g in ChallengeGating.query.all()}
+    return render_template("admin/challenge_gating.html",
+                           challenges=challenge_list, gating=gating)
+
+
+@main.route("/admin/set_gating", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def set_gating():
+    """Upsert (or clear) a challenge's gating row."""
+    try:
+        cid = int(request.form["challenge_id"])
+    except (KeyError, ValueError):
+        flash("Invalid challenge.", "danger")
+        return redirect(url_for("main.challenge_gating"))
+
+    hint = (request.form.get("hint") or "").strip() or None
+    try:
+        hint_cost = max(0, int(request.form.get("hint_cost") or 0))
+    except ValueError:
+        hint_cost = 0
+    unlock_raw = (request.form.get("unlock_at") or "").strip()
+    prereq_raw = (request.form.get("prerequisite_id") or "").strip()
+
+    unlock_at = None
+    if unlock_raw:
+        try:
+            unlock_at = datetime.fromisoformat(unlock_raw)
+        except ValueError:
+            flash("Invalid unlock date/time.", "danger")
+            return redirect(url_for("main.challenge_gating"))
+
+    prerequisite_id = None
+    if prereq_raw:
+        try:
+            prerequisite_id = int(prereq_raw)
+        except ValueError:
+            prerequisite_id = None
+    if prerequisite_id == cid:
+        flash("A challenge can't be its own prerequisite.", "danger")
+        return redirect(url_for("main.challenge_gating"))
+
+    g = ChallengeGating.query.filter_by(challenge_id=cid).first()
+    # if everything is empty, remove any existing row so the challenge is fully ungated
+    if not hint and not hint_cost and not unlock_at and not prerequisite_id:
+        if g:
+            db.session.delete(g)
+            db.session.commit()
+        flash("Gating cleared.", "success")
+        return redirect(url_for("main.challenge_gating"))
+
+    if not g:
+        g = ChallengeGating(challenge_id=cid)
+        db.session.add(g)
+    g.hint = hint
+    g.hint_cost = hint_cost
+    g.unlock_at = unlock_at
+    g.prerequisite_id = prerequisite_id
+    db.session.commit()
+    record_admin_action("challenge.gating", target=str(cid),
+                        detail="hint=%s cost=%d unlock=%s prereq=%s" % (
+                            bool(hint), hint_cost, unlock_at, prerequisite_id))
+    flash("Hints & gating updated.", "success")
+    return redirect(url_for("main.challenge_gating"))
 
 
 @main.route("/admin/analytics")

@@ -484,6 +484,17 @@ score recompute (#20), anti-cheat surfacing (#26).
 
 32. **Hints & gating.** Optional hints with a point cost, timed challenge unlocks, and
     prerequisite chains (a challenge unlocks after another is solved).
+    *Status: ✅ Done. Built on **side-tables** so existing setups are untouched
+    (`ChallengeGating` holds a challenge's hint + cost + `unlock_at` + `prerequisite_id`;
+    `HintReveal` records who paid for a hint). A pure `modules/gating/gating.py` decides
+    lock state (timed unlock, or prerequisite-not-yet-solved) and hint visibility — a
+    challenge with **no gating row is never locked and has no hint**, so behavior is
+    unchanged unless an admin configures it. `submit_answer` enforces the lock before
+    accepting an answer; a new `/reveal_hint` charges the cost once (off the player and
+    their team, floored at zero) and returns the text. The player Challenges page shows a
+    lock badge + reason and a "Reveal hint (−N pts)" button; admins configure it on a new
+    `/admin/challenge_gating` page (per-challenge hint/cost/unlock/prerequisite, with
+    "clear all to remove"), audited (#37) and linked from Manage Challenges.*
 
 33. **Answer tester.** A "test this answer" control so an author can confirm a question
     grades correctly (including normalization/alternates) before publishing.
@@ -766,7 +777,7 @@ Risk is the chance of disturbing existing behavior.
 | 28 | Generation run console & history | M | Low | ✅ **Done** — run history + per-table row counts, streamed progress log, and Stop-to-cancel mid-run |
 | 31 | Edit answers + re-grade | M | Low | Re-grade `AnswerAttempt`; pairs with #21 |
 | 34 | Facilitator analytics dashboard | M | Low | ✅ Done — `/admin/analytics`: solve rates by challenge/category, difficulty calibration, engagement, ADX ingestion health |
-| 32 | Hints & challenge gating | M | Low | Schema additions; player-facing |
+| 32 | Hints & challenge gating | M | Low | ✅ Done — side-tables (no migration): point-cost hints, timed unlocks, prerequisite chains; `/admin/challenge_gating` config; enforced in `submit_answer` |
 | 29 | Scheduled game start/stop | S | Low | Uses scheduling support |
 | 36 | Reset / archive / export game | M | Medium | Touches game state; guard carefully |
 | 35 | Multiple concurrent scenarios | L | Medium | Removes single-company/session assumption |

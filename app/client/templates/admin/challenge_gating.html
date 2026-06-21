@@ -1,0 +1,78 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-lock mr-2 text-primary"></i>Hints &amp; Gating
+  </h1>
+  <a href="/admin/manage_challenges" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-tasks mr-1"></i> Manage Challenges
+  </a>
+</div>
+
+<p class="text-muted">
+  Add an optional <b>hint</b> (with a point cost), a <b>timed unlock</b>, or a
+  <b>prerequisite</b> (this challenge unlocks once another is solved). Leave a challenge's
+  fields empty to keep it fully open — challenges you don't configure here behave exactly
+  as before.
+</p>
+
+{# Forms live outside the table; row inputs attach to them via the HTML5 form= attribute. #}
+{% for ch in challenges %}
+<form id="gate-{{ ch.id }}" method="post" action="/admin/set_gating">
+  <input type="hidden" name="challenge_id" value="{{ ch.id }}">
+</form>
+{% endfor %}
+
+<div class="card shadow mb-4">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="thead-light">
+          <tr>
+            <th>Challenge</th>
+            <th style="min-width:220px">Hint</th>
+            <th style="width:90px">Cost</th>
+            <th style="width:200px">Unlock at</th>
+            <th style="min-width:200px">Prerequisite</th>
+            <th style="width:70px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ch in challenges %}
+          {% set g = gating.get(ch.id) %}
+          <tr>
+            <td class="align-middle">
+              <div class="font-weight-bold">{{ ch.name }}</div>
+              <div class="small text-muted">{{ ch.category }} · {{ ch.value }} pts</div>
+            </td>
+            <td class="align-middle"><input type="text" form="gate-{{ ch.id }}" name="hint" class="form-control form-control-sm"
+                       value="{{ g.hint if g and g.hint else '' }}" placeholder="(no hint)"></td>
+            <td class="align-middle"><input type="number" form="gate-{{ ch.id }}" name="hint_cost" min="0" class="form-control form-control-sm"
+                       value="{{ g.hint_cost if g else 0 }}"></td>
+            <td class="align-middle"><input type="datetime-local" form="gate-{{ ch.id }}" name="unlock_at" class="form-control form-control-sm"
+                       value="{{ g.unlock_at.strftime('%Y-%m-%dT%H:%M') if g and g.unlock_at else '' }}"></td>
+            <td class="align-middle">
+              <select name="prerequisite_id" form="gate-{{ ch.id }}" class="form-control form-control-sm">
+                <option value="">— none —</option>
+                {% for other in challenges if other.id != ch.id %}
+                <option value="{{ other.id }}" {{ 'selected' if g and g.prerequisite_id == other.id else '' }}>{{ other.name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="align-middle">
+              <button type="submit" form="gate-{{ ch.id }}" class="btn btn-sm btn-primary"><i class="fas fa-save"></i></button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted py-4">No challenges yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<p class="small text-muted">Tip: clear all of a challenge's fields and save to remove its gating entirely.</p>
+
+{% endblock %}
