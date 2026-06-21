@@ -504,6 +504,14 @@ score recompute (#20), anti-cheat surfacing (#26).
 38. **Access & resilience.** Force-change the default `admin`/`admin` password on first
     login, add finer roles (read-only **facilitator/observer**, **grader**) alongside
     Admin/Player, and provide DB + config backup/restore.
+    *Status: 🚧 Force-change shipped. A `@main.before_request` guard detects when the
+    seeded default admin account is still using the `admin` password (by verifying it — no
+    schema change) and redirects every request to a `/force_password_change` form until a
+    new password (≥8 chars, not "admin") is set; the change is audited (#37) and a session
+    flag short-circuits the check afterward (non-`admin` usernames short-circuit
+    immediately, so players pay no cost). This upgrades the previous soft warning to a hard
+    gate. Remaining (deliberately deferred for risk): finer read-only **observer/grader**
+    roles, and DB/config **backup/restore**.*
 
 ---
 
@@ -717,7 +725,7 @@ Risk is the chance of disturbing existing behavior.
 ### Phase 7 — Admin & operations (independent track)
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
-| 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | Security basics; force the password change early |
+| 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | 🚧 Force-change of the default admin password ✅ (`/force_password_change` gate); observer/grader roles + backup/restore deferred |
 | 37 | Admin-action audit log | S–M | Low | ✅ Done — `AdminAudit` table + guarded `record_admin_action()` wired into game/user/config/challenge routes; read-only `/admin/audit_log` view with category filter |
 | 30 | Manual score adjustments | S | Low | Needs audit log (#37) |
 | 33 | Answer tester | S | Very low | ✅ **Done** — `/admin/test_answer`; `explain_match` shows normalized forms + which accepted answer matched |

@@ -44,6 +44,7 @@ Then open `http://127.0.0.1:8889/login` and log in with `admin` / `admin`.
 
 > **Security note:** Change the default admin password before exposing the app to any network.
 > Set the `KC7_ADMIN_PASSWORD` environment variable before the first run to override the default.
+> If you log in with the default `admin` password, the app now **requires you to set a new one** before you can do anything else 🆕 — so a fresh install can't be left on default credentials by accident.
 
 ---
 

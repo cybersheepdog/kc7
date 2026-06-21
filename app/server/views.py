@@ -133,6 +133,65 @@ def get_malicious_indicators():
 main = Blueprint("main", __name__)
 
 
+@main.before_request
+def _force_default_admin_password_change():
+    """
+    Access hardening (#38): if the seeded default admin account is still using the
+    default password ("admin"), force a password change before anything else. Redirects
+    every request (except the change page itself) to the change form until it's done.
+
+    No schema change: the default state is detected by verifying the password, and once a
+    new one is set (or the account isn't the default) a session flag short-circuits the
+    check. Non-"admin" usernames short-circuit immediately, so players pay no cost.
+    """
+    from flask import session
+    try:
+        if not current_user.is_authenticated:
+            return None
+    except Exception:
+        return None
+    if request.endpoint in ("main.force_password_change", "static"):
+        return None
+    if session.get("pw_change_ok"):
+        return None
+    try:
+        is_default = (getattr(current_user, "username", "") == "admin"
+                      and current_user.check_password("admin"))
+    except Exception:
+        is_default = False
+    if is_default:
+        return redirect(url_for("main.force_password_change"))
+    session["pw_change_ok"] = True
+    return None
+
+
+@main.route("/force_password_change", methods=["GET", "POST"])
+@login_required
+def force_password_change():
+    """Set a new password for the default admin account on first login (#38)."""
+    from flask import session
+    if request.method == "POST":
+        new = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        errors = []
+        if len(new) < 8:
+            errors.append("Password must be at least 8 characters.")
+        if new.lower() == "admin":
+            errors.append("Choose something other than the default password.")
+        if new != confirm:
+            errors.append("The two passwords do not match.")
+        if errors:
+            return render_template("admin/force_password_change.html", errors=errors)
+        current_user.set_password(new)
+        db.session.commit()
+        session["pw_change_ok"] = True
+        record_admin_action("user.password_change", target=current_user.username,
+                            detail="Changed default admin password on first login")
+        flash("Password updated — you're all set.", "success")
+        return redirect(url_for("main.home"))
+    return render_template("admin/force_password_change.html", errors=[])
+
+
 @main.route("/")
 def home():
     if current_user.is_authenticated:
