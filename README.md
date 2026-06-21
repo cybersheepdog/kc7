@@ -135,6 +135,7 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Background data generation with a live progress bar and a **streamed progress log** 🆕
 - **Session Timer** — set an end date/time after which no new points can be scored from either indicators or challenges. Enabled and disabled independently of the end time.
 - **Scenario & Scoring Tools** panel 🆕 — one-click links to the Scenario Preview (dry run), the Scenario PDF exports (player packet / instructor answer key), the Score Audit, and the **Run History**.
+- **Export Game** 🆕 (`/admin/export_game`) — download a snapshot of the full game state for your records or to archive a finished event: final team and player standings, per-challenge solve stats (how many solved each and when it was first solved), and the complete solve log, as **JSON** (or `?format=csv` for spreadsheet-friendly standings). It's read-only, so exporting never affects a running game.
 - **Run History** (`/admin/run_history`) 🆕 — a log of each data-generation run: when it started/finished, how long it took, success / error / **cancelled**, the scenario window, and **per-table ingested-row counts**. Plain text, or `?format=json`.
 
 #### Scenario Story Wizard (`/admin/scenario_wizard`) 🆕

@@ -531,6 +531,15 @@ score recompute (#20), anti-cheat surfacing (#26).
 
 36. **Reset / archive / export a game.** One-click reset, archive a finished event, and
     export full game state (scores, solves, configs) for records or replay.
+    *Status: ✅ Done. One-click **reset** already existed (`restart_game`). Added a
+    read-only **export** of full game state — a new pure `modules/game_export/game_export.py`
+    (`build_export`) snapshots final **team & player standings** (ranked), **per-challenge
+    solve stats** (count + first-solved time), and the **complete solve log**; `gather_export`
+    pulls it from the live DB (admin team excluded). `/admin/export_game` downloads it as
+    **JSON** (`?format=csv` gives spreadsheet-friendly standings), audited (#37) and linked
+    from the Manage Game tools panel. Read-only, so it never touches a running event —
+    keep the file and it doubles as the **archive** of a finished event. (A stored in-app
+    archive list + replay-reload remain optional future adds.)*
 
 ### Ops hardening
 
@@ -779,7 +788,7 @@ Risk is the chance of disturbing existing behavior.
 | 34 | Facilitator analytics dashboard | M | Low | ✅ Done — `/admin/analytics`: solve rates by challenge/category, difficulty calibration, engagement, ADX ingestion health |
 | 32 | Hints & challenge gating | M | Low | ✅ Done — side-tables (no migration): point-cost hints, timed unlocks, prerequisite chains; `/admin/challenge_gating` config; enforced in `submit_answer` |
 | 29 | Scheduled game start/stop | S | Low | Uses scheduling support |
-| 36 | Reset / archive / export game | M | Medium | Touches game state; guard carefully |
+| 36 | Reset / archive / export game | M | Medium | ✅ Done — reset existed; read-only `/admin/export_game` (JSON/CSV) snapshots standings + solve stats + solve log for records/archive |
 | 35 | Multiple concurrent scenarios | L | Medium | Removes single-company/session assumption |
 
 ### Phase 8 — Real-world intel & attribution (independent track)

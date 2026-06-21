@@ -2057,6 +2057,37 @@ def game_guide():
     return Response(md, mimetype="text/markdown; charset=utf-8", headers=headers)
 
 
+@main.route("/admin/export_game")
+@roles_required("Admin")
+@login_required
+def export_game():
+    """
+    Export the full game state (#36) for records or replay — final standings, per-challenge
+    solve stats, and the complete solve log. Read-only; doesn't touch the running game.
+      ?format=csv  -> team + player standings as CSV
+      (default)    -> the full state as JSON
+    """
+    from flask import Response
+    import json as _json
+    from app.server.modules.game_export.game_export import gather_export, standings_csv
+
+    fmt = request.args.get("format", "json")
+    try:
+        export = gather_export()
+    except Exception as e:
+        print("export_game error:", e)
+        flash("Could not export game state: " + str(e), "danger")
+        return redirect(url_for("main.manage_game"))
+
+    record_admin_action("game.export", detail="format=%s" % fmt)
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    if fmt == "csv":
+        return Response(standings_csv(export), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=kc7_standings_%s.csv" % ts})
+    return Response(_json.dumps(export, indent=2), mimetype="application/json",
+                    headers={"Content-Disposition": "attachment; filename=kc7_game_export_%s.json" % ts})
+
+
 @main.route("/admin/preview_scenario")
 @roles_required("Admin")
 @login_required
