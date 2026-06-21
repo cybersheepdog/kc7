@@ -1,0 +1,110 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-vial mr-2 text-primary"></i>Answer Tester
+  </h1>
+  <a href="/admin/manage_challenges" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-tasks mr-1"></i> Manage Challenges
+  </a>
+</div>
+
+<p class="text-muted">
+  Confirm a challenge grades the way you expect <b>before publishing</b>. Submissions are
+  matched with the same normalization the live scoreboard uses — defang (<code>1[.]2[.]3[.]4</code>),
+  URL scheme, trailing slash, case — and <code>;</code>-separated alternates are all accepted.
+</p>
+
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Test an answer</h6></div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="small font-weight-bold mb-1">Prefill from a challenge <span class="text-muted">(optional)</span></label>
+          <select id="challengePicker" class="form-control">
+            <option value="">— choose a challenge —</option>
+            {% for c in challenges %}
+            <option value="{{ c.id }}">{{ c.name }}{% if c.category %} · {{ c.category }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="small font-weight-bold mb-1">Accepted answer(s) <span class="text-muted">(separate alternates with <code>;</code>)</span></label>
+          <textarea id="accepted" class="form-control text-monospace" rows="3" placeholder="e.g. 1.2.3.4 ; evil.com"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="small font-weight-bold mb-1">Player's submission to test</label>
+          <input id="submitted" type="text" class="form-control text-monospace" placeholder="e.g. hxxp://1[.]2[.]3[.]4/">
+        </div>
+        <button id="testBtn" class="btn btn-primary"><i class="fas fa-play mr-1"></i> Test answer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Result</h6></div>
+      <div class="card-body">
+        <div id="resultEmpty" class="text-muted">Enter an accepted answer and a submission, then press <b>Test answer</b>.</div>
+        <div id="resultBox" style="display:none;">
+          <div id="verdict" class="h5 mb-3"></div>
+          <div class="small text-muted mb-1">Submission normalizes to:</div>
+          <div class="mb-3"><code id="normSubmitted"></code></div>
+          <div class="small text-muted mb-1">Accepted answers (after normalization):</div>
+          <table class="table table-sm table-bordered">
+            <thead class="thead-light"><tr><th>Accepted</th><th>Normalized</th><th style="width:80px">Match</th></tr></thead>
+            <tbody id="acceptedRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var CHALLENGES = {{ challenges|tojson }};
+  var byId = {};
+  CHALLENGES.forEach(function(c){ byId[String(c.id)] = c; });
+
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  $('#challengePicker').on('change', function(){
+    var c = byId[$(this).val()];
+    if (c) $('#accepted').val(c.answer);
+  });
+
+  function renderResult(r){
+    $('#resultEmpty').hide();
+    $('#resultBox').show();
+    if (r.matched) {
+      $('#verdict').html('<span class="badge badge-success p-2"><i class="fas fa-check mr-1"></i>Would be marked CORRECT</span>'
+        + ' <span class="text-muted small ml-1">matched: <code>' + esc(r.matched_form) + '</code></span>');
+    } else {
+      $('#verdict').html('<span class="badge badge-danger p-2"><i class="fas fa-times mr-1"></i>Would be marked WRONG</span>');
+    }
+    $('#normSubmitted').text(r.normalized_submitted || '(empty)');
+    var tb = $('#acceptedRows').empty();
+    if (!r.accepted || r.accepted.length === 0) {
+      tb.append('<tr><td colspan="3" class="text-muted">No accepted answers provided.</td></tr>');
+    } else {
+      r.accepted.forEach(function(a){
+        tb.append('<tr class="' + (a.matches ? 'table-success' : '') + '">'
+          + '<td><code>' + esc(a.raw) + '</code></td>'
+          + '<td><code>' + esc(a.normalized) + '</code></td>'
+          + '<td>' + (a.matches ? '✅' : '—') + '</td></tr>');
+      });
+    }
+  }
+
+  $('#testBtn').on('click', function(){
+    // Reuses the existing /admin/test_answer JSON API (explain_match).
+    $.get('/admin/test_answer',
+      { answer: $('#submitted').val(), accepted: $('#accepted').val() },
+      renderResult);
+  });
+  $('#submitted').on('keydown', function(e){ if (e.key === 'Enter') $('#testBtn').click(); });
+</script>
+
+{% endblock %}

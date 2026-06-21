@@ -487,6 +487,14 @@ score recompute (#20), anti-cheat surfacing (#26).
 
 33. **Answer tester.** A "test this answer" control so an author can confirm a question
     grades correctly (including normalization/alternates) before publishing.
+    *Status: ✅ Done. The `explain_match` JSON API (`/admin/test_answer`) already existed;
+    this adds the missing **author-facing UI**: a new `/admin/answer_tester` page (linked
+    from Manage Challenges) where an author picks a challenge (or pastes accepted answers)
+    and a trial submission and sees whether it would grade **CORRECT/WRONG**, plus a
+    per-alternate breakdown (raw accepted value, its normalized form, which one matched).
+    The page calls the existing `/admin/test_answer` API — same `answer_matching.explain_match`
+    the live scoreboard uses — so defang / URL-scheme / trailing-slash / case normalization
+    and `;`-separated alternates behave identically to real grading. No scoring changes.*
 
 ### Facilitator analytics
 
@@ -754,7 +762,7 @@ Risk is the chance of disturbing existing behavior.
 | 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | 🚧 Force-change of the default admin password ✅ (`/force_password_change` gate); observer/grader roles + backup/restore deferred |
 | 37 | Admin-action audit log | S–M | Low | ✅ Done — `AdminAudit` table + guarded `record_admin_action()` wired into game/user/config/challenge routes; read-only `/admin/audit_log` view with category filter |
 | 30 | Manual score adjustments | S | Low | Needs audit log (#37) |
-| 33 | Answer tester | S | Very low | ✅ **Done** — `/admin/test_answer`; `explain_match` shows normalized forms + which accepted answer matched |
+| 33 | Answer tester | S | Very low | ✅ **Done** — author UI at `/admin/answer_tester` (picker + verdict + per-alternate breakdown) over the existing `/admin/test_answer` `explain_match` API |
 | 28 | Generation run console & history | M | Low | ✅ **Done** — run history + per-table row counts, streamed progress log, and Stop-to-cancel mid-run |
 | 31 | Edit answers + re-grade | M | Low | Re-grade `AnswerAttempt`; pairs with #21 |
 | 34 | Facilitator analytics dashboard | M | Low | ✅ Done — `/admin/analytics`: solve rates by challenge/category, difficulty calibration, engagement, ADX ingestion health |

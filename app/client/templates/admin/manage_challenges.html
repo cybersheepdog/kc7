@@ -27,6 +27,9 @@
                   onsubmit="return confirm('Create challenges auto-generated from the scenario ground truth? Existing names are skipped.');">
               <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-magic mr-1"></i> Auto-generate</button>
             </form>
+            <a href="/admin/answer_tester" class="btn btn-sm btn-outline-secondary mr-2" title="Test how an answer grades">
+              <i class="fas fa-vial mr-1"></i> Answer tester
+            </a>
             <span class="badge badge-primary badge-pill">{{ challenges|length }} total</span>
           </div>
         </div>

@@ -2676,6 +2676,19 @@ def audit_log():
                            categories=categories, current=prefix or "")
 
 
+@main.route("/admin/answer_tester")
+@login_required
+@roles_required("Admin")
+def answer_tester():
+    """Author tool (#33): confirm a challenge grades a given answer correctly — including
+    normalization (defang/scheme/trailing slash) and ';'-separated alternates — before
+    publishing."""
+    challenges = [{"id": c.id, "name": c.name, "category": c.category or "",
+                   "answer": c.answer or "", "value": c.value or 0}
+                  for c in Challenge.query.order_by(Challenge.name).all()]
+    return render_template("admin/answer_tester.html", challenges=challenges)
+
+
 @main.route("/admin/analytics")
 @login_required
 @roles_required("Admin")
