@@ -108,6 +108,15 @@ class ProductionConfig(BaseConfig):
     INFRA_REUSE_ENABLED = False
     INFRA_REUSE_PREFIX_COUNT = 3
 
+    # --- Per-technique detection fidelity (off by default) — #15 ---
+    # When enabled, each advanced technique can trip a SecurityAlert with a probability
+    # and severity drawn from its detection profile (see modules/alerts/detection.py):
+    # loud techniques (PsExec service install, impossible-travel sign-in, public-bucket
+    # exfil) alert often; deliberately quiet ones (Kerberoasting, log clearing) rarely
+    # do — giving players authentic visibility gaps to work around. When disabled, no
+    # technique-detection alerts are emitted and behavior is unchanged.
+    TECHNIQUE_ALERTS_ENABLED = False
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7

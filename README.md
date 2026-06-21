@@ -119,6 +119,8 @@ Scenarios now span the **full Cyber Kill Chain**, so investigations go far beyon
 
 **Infrastructure reuse** 🆕 (optional, `INFRA_REUSE_ENABLED` in `config.py`, off by default): the attribution enabler. When enabled, each actor's IPs are drawn from a small, **stable set of "owned" network ranges** (ASN-like /16 prefixes) seeded deterministically from the actor's name, instead of being scattered randomly across the whole IPv4 space. So the actor's infrastructure clusters in the same recognizable ranges across campaigns and re-runs — a pivotable fingerprint that lets players link two separate intrusions to one actor. (Domains already share stable per-actor TLDs/themes and malware families already reuse their hashes, so IP ranges were the missing piece.) With it off, IPs are random as before.
 
+**Per-technique detection fidelity** 🆕 (optional, `TECHNIQUE_ALERTS_ENABLED` in `config.py`, off by default): when enabled, each advanced technique can trip a `SecurityAlert` with a probability and severity set by its **detection profile**. Loud techniques light up the SOC (PsExec service install, impossible-travel sign-in, public-bucket exfil — high severity, frequent); deliberately quiet ones rarely do (Kerberoasting, event-log clearing — low, rare). The effect is authentic **visibility gaps**: players catch some intrusion steps on an alert and must reconstruct the quiet ones from raw telemetry. With it off, no technique-detection alerts are emitted.
+
 This activity surfaces across new endpoint and cloud log sources (`SecurityEvents`, `CloudSignInLogs`, `CloudStorageLogs`) alongside the existing tables — see [Simulated Telemetry](#-simulated-telemetry-adx-tables).
 
 ---
@@ -294,7 +296,7 @@ When the game runs, it generates realistic security logs and ingests them into A
 | `SecurityEvents` 🆕 | Windows event log — Kerberos `4769`, service install `7045`, log clear `1102`/`104` |
 | `CloudSignInLogs` 🆕 | Cloud identity sign-ins with city/country for impossible-travel detection |
 | `CloudStorageLogs` 🆕 | Cloud storage ACL changes and object reads (storage exfil) |
-| `SecurityAlerts` | Simulated EDR/email alerts, including realistic false positives |
+| `SecurityAlerts` | Simulated EDR/email alerts, including realistic false positives. Carries structured `hostname`, `username`, and `technique_id` (MITRE ATT&CK) columns alongside the description, so alerts join cleanly to host/identity telemetry and to techniques |
 
 New tables are created automatically on game start (registered in `LogUploader.CUSTOM_TYPES`); no manual ADX schema setup is required.
 

@@ -38,6 +38,7 @@ from app.server.modules.inbound_browsing.inbound_browsing_controller import gen_
 from app.server.modules.organization.Company import Employee
 from app.server.modules.actors.Actor import Actor
 from app.server.utils import get_employees, get_company
+from app.server.modules.alerts.detection import generate_technique_alert
 from app.server.modules.advanced_attacks.attack_constants import *
 
 fake = Faker()
@@ -229,6 +230,10 @@ def actor_kerberoasting(actor: Actor, start_date: date, num_spns: int = None) ->
     )
     upload_auth_event_to_azure(auth_event)
 
+    # Kerberoasting is deliberately low-signal; it rarely trips an alert (#15)
+    generate_technique_alert(time=login_time, attack="identity:kerberoasting",
+                             username=compromised.username)
+
 
 def actor_psexec_lateral(actor: Actor, start_date: date, num_hops: int = None) -> None:
     """
@@ -299,6 +304,10 @@ def actor_psexec_lateral(actor: Actor, start_date: date, num_hops: int = None) -
         # next hop happens a little later in the workday
         time = _working_hours_delay(actor, auth_time, factor="minutes")
 
+    # A new-service install (7045) over SMB is loud — frequently alerts (#15)
+    generate_technique_alert(time=time, attack="execution:psexec_lateral",
+                             hostname=source.hostname)
+
 
 # ---------------------------------------------------------------------------
 # 2. Defense evasion & discovery
@@ -365,6 +374,10 @@ def actor_clears_logs(actor: Actor, start_date: date) -> None:
         table_name="SecurityEvents"
     )
 
+    # Log clearing is an evasion technique — by design it rarely self-alerts (#15)
+    generate_technique_alert(time=time, attack="evasion:log_clearing",
+                             hostname=host.hostname)
+
 
 def actor_automated_recon(actor: Actor, start_date: date) -> None:
     """
@@ -392,6 +405,10 @@ def actor_automated_recon(actor: Actor, start_date: date) -> None:
         )
         # keep the whole burst inside roughly a 5-second window
         time = Clock.increment_time(time, 1)
+
+    # A dense discovery burst is moderately noisy (#15)
+    generate_technique_alert(time=time, attack="discovery:automated_recon",
+                             hostname=host.hostname)
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +461,10 @@ def actor_cloud_session_hijacking(actor: Actor, start_date: date) -> None:
             table_name="CloudSignInLogs"
         )
         hijack_time = Clock.increment_time(hijack_time, random.randint(30, 300))
+
+    # Impossible-travel sign-in is a high-signal cloud alert (#15)
+    generate_technique_alert(time=hijack_time, attack="cloud:session_hijacking",
+                             username=user.email_addr)
 
 
 def actor_cloud_exfil_via_storage(actor: Actor, start_date: date) -> None:
@@ -512,6 +533,10 @@ def actor_cloud_exfil_via_storage(actor: Actor, start_date: date) -> None:
         )
         read_time = Clock.increment_time(read_time, random.randint(1, 30))
 
+    # A bucket flipped public + mass reads is loud — high-signal alert (#15)
+    generate_technique_alert(time=read_time, attack="cloud:exfiltration_via_storage",
+                             username=admin.email_addr)
+
 
 # ---------------------------------------------------------------------------
 # 4. Advanced persistence mechanisms
@@ -555,6 +580,10 @@ def actor_establishes_persistence(actor: Actor, start_date: date, mechanism: str
         username=host.username
     )
 
+    # Persistence via schtasks / Run keys is moderately monitored (#15)
+    generate_technique_alert(time=time, attack=f"persistence:{mechanism}",
+                             hostname=host.hostname)
+
 
 # ---------------------------------------------------------------------------
 # 5. Hands-on-keyboard execution & data exfiltration
@@ -597,6 +626,10 @@ def actor_hands_on_keyboard(actor: Actor, start_date: date) -> None:
         # the operator types commands a few seconds to a couple of minutes apart
         time = Clock.increment_time(time, random.randint(5, 120))
 
+    # Living-off-the-land operator commands are fairly quiet (#15)
+    generate_technique_alert(time=time, attack="hands_on_keyboard:operator",
+                             hostname=host.hostname)
+
 
 def actor_email_data_exfil(actor: Actor, start_date: date) -> None:
     """
@@ -631,3 +664,7 @@ def actor_email_data_exfil(actor: Actor, start_date: date) -> None:
             user_agent=fake.firefox()
         )
         exfil_time = Clock.increment_time(exfil_time, random.randint(30, 600))
+
+    # Bulk mailbox download sometimes trips a DLP/EDR alert (#15)
+    generate_technique_alert(time=exfil_time, attack="exfiltration:email_collection",
+                             username=target.username)

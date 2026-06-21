@@ -20,7 +20,8 @@ def generate_host_alert(time: float, hostname:str, filename:str, sha256:str, sev
         time=time,
         alert_type="HOST",
         severity=severity,
-        description=f"Your antivirus system detected a suspicious file on host {hostname} with filename {filename}. Sha256: {sha256}"
+        description=f"Your antivirus system detected a suspicious file on host {hostname} with filename {filename}. Sha256: {sha256}",
+        hostname=hostname
     )
 
     send_alert_to_azure(alert)
@@ -35,7 +36,8 @@ def generate_email_alert(time: float, username:str, subject:str) -> None:
         time=time,
         alert_type="Email",
         severity="med",
-        description=f"Employee {username} reported a suspicious email with the subject \"{subject}\""
+        description=f"Employee {username} reported a suspicious email with the subject \"{subject}\"",
+        username=username
     )
 
     send_alert_to_azure(alert)

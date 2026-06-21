@@ -229,6 +229,21 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
     install, impossible-travel sign-in), some deliberately quiet (log clearing,
     Kerberoasting) — giving players authentic visibility gaps to work around.
     *Benefit: cheap realism win; makes hunts feel real.*
+    *Status: ✅ Done (opt-in `TECHNIQUE_ALERTS_ENABLED`). `modules/alerts/detection.py`
+    holds a per-technique `DETECTION_PROFILES` table — `(detection_rate, severity)` per
+    attack string — and a gated `generate_technique_alert()` that, on a roll under the
+    rate, emits an `EDR` `SecurityAlert`. Loud techniques alert often (PsExec service
+    install 0.6/high, impossible-travel 0.6/high, public-bucket exfil 0.7/high); quiet
+    ones rarely do (log clearing 0.05/low, Kerberoasting 0.02/low), so players catch some
+    steps on an alert and must reconstruct others from raw telemetry. Wired into all nine
+    advanced generators; off by default → no new alerts and unchanged behavior. The
+    `SecurityAlerts` table now also carries structured **`hostname` / `username` /
+    `technique_id`** (MITRE ATT&CK) columns alongside the prose description — appended
+    after the original four so positional CSV ingestion is unaffected and legacy
+    producers default them to empty — so an alert joins cleanly to host/identity
+    telemetry and to the technique (and to #11's ATT&CK challenges). Follow-up: extend
+    profiles to password-spray / watering-hole and add per-technique false-positive
+    noise.*
 
 ---
 
@@ -576,7 +591,7 @@ Risk is the chance of disturbing existing behavior.
 | 7 | Cross-table identity consistency | M | Medium | Stable per-campaign infra & entities |
 | 8 | Event-driven behavioral timing (dwell & jitter) | S–M | Low | 🚧 stage dwell shipped — campaign clock advances an in-working-hours dwell between stages so the kill chain unfolds in order; beacon jitter / low-and-slow exfil pending |
 | 10 | Richer benign baseline | M | Low | Deepen default-actor noise/process trees |
-| 15 | Per-technique detection fidelity | S–M | Low | Tune noisy vs. silent techniques (alert FP/TP rates) |
+| 15 | Per-technique detection fidelity | S–M | Low | ✅ Done — opt-in `TECHNIQUE_ALERTS_ENABLED`; per-technique `DETECTION_PROFILES` (rate+severity), gated EDR alerts wired into all 9 advanced generators (loud vs. deliberately-quiet) |
 
 ### Phase 4 — Authoring experience
 | # | Item | Effort | Risk | Notes |
