@@ -477,6 +477,16 @@ score recompute (#20), anti-cheat surfacing (#26).
 34. **Analytics dashboard.** Beyond the live feed: score-over-time per team, solve rates
     by challenge/category/ATT&CK phase, difficulty calibration (challenges nobody solves),
     engagement (active vs. idle players), and ADX ingestion health (queue depth, errors).
+    *Status: ✅ Done. New pure `modules/analytics/facilitator_analytics.py`
+    (`compute_analytics`) rolls the Solve / AnswerAttempt logs into: per-challenge **solve
+    rate** + attempts-per-solver (sorted hardest-first), a **by-category** rollup,
+    **difficulty calibration** (unsolved / too-hard &lt;15% / too-easy &gt;85% bands), and
+    **engagement** (active vs. idle vs. solved-anything). The `/admin/analytics` view
+    (sidebar-linked) renders these with dependency-free CSS bars, and adds **ADX ingestion
+    health** from the live uploader (rows per table, queue depth, last error). Score-over-time
+    per team already shipped on the scoreboard's Progress tab (#25). All guarded so it
+    degrades to safe zeros. (ATT&CK-phase solve rates would need challenge→phase tagging;
+    the category rollup covers the practical need.)*
 
 ### Lifecycle & multi-event
 
@@ -731,7 +741,7 @@ Risk is the chance of disturbing existing behavior.
 | 33 | Answer tester | S | Very low | ✅ **Done** — `/admin/test_answer`; `explain_match` shows normalized forms + which accepted answer matched |
 | 28 | Generation run console & history | M | Low | ✅ **Done** — run history + per-table row counts, streamed progress log, and Stop-to-cancel mid-run |
 | 31 | Edit answers + re-grade | M | Low | Re-grade `AnswerAttempt`; pairs with #21 |
-| 34 | Facilitator analytics dashboard | M | Low | Builds on `Solve`/`AnswerAttempt` |
+| 34 | Facilitator analytics dashboard | M | Low | ✅ Done — `/admin/analytics`: solve rates by challenge/category, difficulty calibration, engagement, ADX ingestion health |
 | 32 | Hints & challenge gating | M | Low | Schema additions; player-facing |
 | 29 | Scheduled game start/stop | S | Low | Uses scheduling support |
 | 36 | Reset / archive / export game | M | Medium | Touches game state; guard carefully |

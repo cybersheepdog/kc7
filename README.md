@@ -220,6 +220,13 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Pause/resume without losing buffered data
 - **Integrity flags** 🆕 — an advisory panel that surfaces suspicious patterns from the submission log: the **same answer from multiple teams** in a tight window (defang-aware, so `1.2.3.4` and `1[.]2[.]3[.]4` count as the same), a **suspiciously fast solve** landing seconds after another team's correct answer, and **burst solving** (one player getting many correct answers faster than the questions can be read). These are leads worth a look, not proof — the system never auto-penalizes.
 
+#### Facilitator Analytics (`/admin/analytics`) 🆕
+- A facilitator's-eye view built from the solve/attempt logs, beyond the live feed and team standings.
+- **Solve rates** per challenge (sorted hardest-first) and per category, with an attempts-per-solver "friction" figure.
+- **Difficulty calibration** — challenges nobody has solved, plus too-hard (<15% solved) and too-easy (>85%) bands, so you can spot a broken or trivial challenge at a glance.
+- **Engagement** — how many players are active vs. idle, and how many have solved at least one challenge.
+- **ADX ingestion health** — rows ingested per table, queue depth, and the last error from the generation run.
+
 #### Audit Log (`/admin/audit_log`) 🆕
 - An append-only record of privileged admin actions, for accountability when multiple staff run an event.
 - Captures **who** did **what**, to which **target**, with detail, IP, and timestamp — across game start/stop/restart, user create/edit (including role and team changes), scenario config save/delete, intel-pack import, and challenge generate/delete.

@@ -2670,6 +2670,47 @@ def audit_log():
                            categories=categories, current=prefix or "")
 
 
+@main.route("/admin/analytics")
+@login_required
+@roles_required("Admin")
+def analytics_dashboard():
+    """Facilitator analytics (#34): solve rates, difficulty calibration, engagement,
+    and ADX ingestion health — built from the Solve / AnswerAttempt logs."""
+    from app.server.modules.analytics.facilitator_analytics import compute_analytics
+
+    data = {"totals": {}, "engagement": {}, "per_challenge": [], "by_category": [],
+            "calibration": {"unsolved": [], "too_hard": [], "too_easy": []}}
+    try:
+        challenges = [{"id": c.id, "name": c.name, "category": c.category, "value": c.value}
+                      for c in Challenge.query.all()]
+        player_ids = {u.id for u in Users.query.filter(Users.team_id != 1).all()}
+        solves = [{"challenge_id": s.challenge_id, "user_id": s.user_id}
+                  for s in Solve.query.all() if s.user_id in player_ids]
+        attempts = [{"challenge_id": a.challenge_id, "user_id": a.user_id, "correct": bool(a.correct)}
+                    for a in AnswerAttempt.query.all() if a.user_id in player_ids]
+        data = compute_analytics(challenges, solves, attempts, total_players=len(player_ids))
+    except Exception as e:
+        print("analytics_dashboard error:", e)
+
+    # ADX ingestion health (best-effort; the uploader only exists during/after a run)
+    ingestion = {"queue": None, "rows": {}, "total_rows": 0, "error": None, "running": False}
+    try:
+        from app.server.game_functions import LOG_UPLOADER, GAME_PROGRESS
+        rows = dict(getattr(LOG_UPLOADER, "row_counts", {}) or {})
+        ingestion["rows"] = rows
+        ingestion["total_rows"] = sum(rows.values())
+        try:
+            ingestion["queue"] = LOG_UPLOADER.get_queue_length()
+        except Exception:
+            ingestion["queue"] = None
+        ingestion["error"] = GAME_PROGRESS.get("error")
+        ingestion["running"] = bool(GAME_PROGRESS.get("running"))
+    except Exception as e:
+        print("analytics ingestion health unavailable:", e)
+
+    return render_template("admin/analytics.html", a=data, ingestion=ingestion)
+
+
 @main.route("/admin/live_feed")
 @login_required
 @roles_required("Admin")

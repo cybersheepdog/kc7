@@ -1,0 +1,156 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-chart-pie mr-2 text-primary"></i>Facilitator Analytics
+  </h1>
+  <a href="/admin/live_dashboard" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-satellite-dish mr-1"></i> Live Feed
+  </a>
+</div>
+
+{% set eng = a.engagement %}
+{% set tot = a.totals %}
+
+<!-- Top stats -->
+<div class="row mb-2">
+  <div class="col-md-3 col-sm-6 mb-3">
+    <div class="card border-left-primary shadow h-100 py-2"><div class="card-body py-2">
+      <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Players</div>
+      <div class="h5 mb-0 font-weight-bold text-gray-800">{{ tot.players or 0 }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-3 col-sm-6 mb-3">
+    <div class="card border-left-success shadow h-100 py-2"><div class="card-body py-2">
+      <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Active</div>
+      <div class="h5 mb-0 font-weight-bold text-gray-800">{{ eng.active or 0 }}
+        <span class="text-muted small">({{ eng.active_pct or 0 }}%)</span></div>
+      <div class="text-xs text-muted">{{ eng.idle or 0 }} idle</div>
+    </div></div>
+  </div>
+  <div class="col-md-3 col-sm-6 mb-3">
+    <div class="card border-left-info shadow h-100 py-2"><div class="card-body py-2">
+      <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Have solved ≥1</div>
+      <div class="h5 mb-0 font-weight-bold text-gray-800">{{ eng.solvers or 0 }}
+        <span class="text-muted small">({{ eng.solver_pct or 0 }}%)</span></div>
+    </div></div>
+  </div>
+  <div class="col-md-3 col-sm-6 mb-3">
+    <div class="card border-left-warning shadow h-100 py-2"><div class="card-body py-2">
+      <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Solves / Attempts</div>
+      <div class="h5 mb-0 font-weight-bold text-gray-800">{{ tot.solves or 0 }} <span class="text-muted small">/ {{ tot.attempts or 0 }}</span></div>
+    </div></div>
+  </div>
+</div>
+
+<!-- Difficulty calibration -->
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Difficulty calibration</h6></div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-4">
+        <div class="font-weight-bold text-danger mb-1">Unsolved <span class="badge badge-danger">{{ a.calibration.unsolved|length }}</span></div>
+        {% if a.calibration.unsolved %}<ul class="small pl-3 mb-0">{% for n in a.calibration.unsolved %}<li>{{ n }}</li>{% endfor %}</ul>
+        {% else %}<div class="text-muted small">None — every challenge has a solver.</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <div class="font-weight-bold text-warning mb-1">Too hard <span class="text-muted small">(&lt;15% solved)</span></div>
+        {% if a.calibration.too_hard %}<ul class="small pl-3 mb-0">{% for n in a.calibration.too_hard %}<li>{{ n }}</li>{% endfor %}</ul>
+        {% else %}<div class="text-muted small">None.</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <div class="font-weight-bold text-success mb-1">Too easy <span class="text-muted small">(&gt;85% solved)</span></div>
+        {% if a.calibration.too_easy %}<ul class="small pl-3 mb-0">{% for n in a.calibration.too_easy %}<li>{{ n }}</li>{% endfor %}</ul>
+        {% else %}<div class="text-muted small">None.</div>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Solve rate by category -->
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Solve rate by category</h6></div>
+  <div class="card-body">
+    {% if a.by_category %}
+    {% for d in a.by_category %}
+    <div class="mb-2">
+      <div class="d-flex justify-content-between small"><span>{{ d.category }} <span class="text-muted">({{ d.challenges }})</span></span><span>{{ d.avg_solve_rate }}%</span></div>
+      <div class="progress" style="height:8px;">
+        <div class="progress-bar bg-info" role="progressbar" style="width: {{ d.avg_solve_rate }}%;"></div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}<div class="text-muted">No solves yet.</div>{% endif %}
+  </div>
+</div>
+
+<!-- Per-challenge (hardest first) -->
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Challenges — hardest first</h6></div>
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:520px; overflow-y:auto;">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="thead-light" style="position:sticky;top:0;z-index:1;">
+          <tr><th>Challenge</th><th>Category</th><th class="text-right">Pts</th>
+              <th class="text-right">Solvers</th><th style="width:160px">Solve rate</th>
+              <th class="text-right">Att/solver</th></tr>
+        </thead>
+        <tbody>
+          {% for c in a.per_challenge %}
+          <tr {% if c.solvers == 0 %}class="table-danger"{% endif %}>
+            <td>{{ c.name }}</td>
+            <td><span class="badge badge-light">{{ c.category }}</span></td>
+            <td class="text-right">{{ c.value }}</td>
+            <td class="text-right">{{ c.solvers }}</td>
+            <td>
+              <div class="d-flex align-items-center">
+                <div class="progress flex-grow-1 mr-2" style="height:7px;">
+                  <div class="progress-bar {{ 'bg-danger' if c.solve_rate < 15 else ('bg-success' if c.solve_rate > 85 else 'bg-info') }}"
+                       style="width: {{ c.solve_rate }}%;"></div>
+                </div>
+                <span class="small text-muted">{{ c.solve_rate }}%</span>
+              </div>
+            </td>
+            <td class="text-right">{{ c.attempts_per_solver if c.attempts_per_solver is not none else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted py-4">No challenges yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ADX ingestion health -->
+<div class="card shadow mb-4">
+  <div class="card-header py-3 d-flex justify-content-between align-items-center">
+    <h6 class="m-0 font-weight-bold text-primary">ADX ingestion health</h6>
+    <span class="badge {{ 'badge-success' if ingestion.running else 'badge-secondary' }}">
+      {{ 'Running' if ingestion.running else 'Idle' }}
+    </span>
+  </div>
+  <div class="card-body">
+    {% if ingestion.error %}<div class="alert alert-danger py-2 small mb-3">Last error: {{ ingestion.error }}</div>{% endif %}
+    <div class="row mb-2">
+      <div class="col-sm-4"><span class="text-muted small">Rows ingested:</span> <b>{{ ingestion.total_rows }}</b></div>
+      <div class="col-sm-4"><span class="text-muted small">Queue depth:</span> <b>{{ ingestion.queue if ingestion.queue is not none else '—' }}</b></div>
+      <div class="col-sm-4"><span class="text-muted small">Tables:</span> <b>{{ ingestion.rows|length }}</b></div>
+    </div>
+    {% if ingestion.rows %}
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead class="thead-light"><tr><th>Table</th><th class="text-right">Rows</th></tr></thead>
+        <tbody>
+          {% for name, n in ingestion.rows.items() %}
+          <tr><td class="small"><code>{{ name }}</code></td><td class="text-right">{{ n }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="text-muted small">No ingestion activity yet — run a game to populate ADX.</div>{% endif %}
+  </div>
+</div>
+
+{% endblock %}
