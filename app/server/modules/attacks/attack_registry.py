@@ -34,6 +34,8 @@ class Phase:
     LATERAL_MOVEMENT  = "Lateral Movement"
     DEFENSE_EVASION   = "Defense Evasion"
     PERSISTENCE       = "Persistence"
+    EXECUTION         = "Execution / Hands-on-Keyboard"
+    EXFILTRATION      = "Collection / Exfiltration"
     CLOUD             = "Cloud"
 
 
@@ -183,6 +185,28 @@ ATTACK_REGISTRY = {
         description="Run/RunOnce registry key that re-launches the payload at logon.",
         tables=("ProcessEvents",),
         recommended_fields=("malware",),
+    ),
+
+    # --- Execution / Hands-on-Keyboard ---
+    "hands_on_keyboard:operator": AttackSpec(
+        attack="hands_on_keyboard:operator",
+        phase=Phase.EXECUTION,
+        attack_id="T1059",
+        attack_name="Command and Scripting Interpreter",
+        description="Interactive operator commands (collection, staging, beaconing) run on a compromised host via C2.",
+        tables=("ProcessEvents",),
+        recommended_fields=("watering_hole_target_roles",),
+    ),
+
+    # --- Collection / Exfiltration ---
+    "exfiltration:email_collection": AttackSpec(
+        attack="exfiltration:email_collection",
+        phase=Phase.EXFILTRATION,
+        attack_id="T1114.002",
+        attack_name="Email Collection: Remote Email Collection",
+        description="Stolen-credential sign-in to a mailbox followed by bulk mail download over the web.",
+        tables=("AuthenticationEvents", "InboundBrowsing"),
+        recommended_fields=("watering_hole_target_roles",),
     ),
 
     # --- Cloud ---

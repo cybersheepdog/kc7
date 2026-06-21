@@ -211,12 +211,17 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
     - ✅ `delivery:supply_chain` — **now triggers email on its own** (added to the email
       dispatch gate), so a supply-chain-only actor sends from compromised partner
       addresses instead of nothing.
-    - ⬜ Hands-on-keyboard post-exploitation and email/data exfiltration still exist only
-      as follow-ons to a successful email-malware detonation. Promoting them to
-      standalone techniques needs new `AttackTypes` entries + registry specs + dispatch.
+    - ✅ Hands-on-keyboard post-exploitation (`hands_on_keyboard:operator`, T1059 →
+      ProcessEvents) and email/data exfiltration (`exfiltration:email_collection`,
+      T1114.002 → AuthenticationEvents + InboundBrowsing) are **now first-class
+      standalone techniques**, no longer only follow-ons to an email-malware detonation.
+      Added `AttackTypes` members, registry specs (new `Execution` / `Exfiltration`
+      kill-chain phases), standalone generators, and `ATTACK_DISPATCH` entries. Both are
+      campaign-aware — when campaign mode is on they operate against the pinned host and
+      reuse the pinned C2 IP/domain (#6), so they slot cleanly into the kill chain.
 
-    *Benefit: completes the documented technique menu with no new infrastructure. Two of
-    three done; the last needs new enum entries so it's grouped with future technique work.*
+    *Benefit: completes the documented technique menu with no new infrastructure. ✅ Done
+    — all three wired; the registry⇄enum and dispatch⇄enum self-checks keep them in sync.*
 
 15. **Per-technique detection fidelity.** The engine already models alert
     true/false-positive rates (`TP_RATE_HOST_ALERTS`, `FP_RATE_*`, etc.). Extend this
@@ -556,7 +561,7 @@ Risk is the chance of disturbing existing behavior.
 | 2 | Attack registry | M | Low | ✅ **Done** — single source of truth + **registry-driven dispatch** (declarative `ATTACK_DISPATCH` table replaces the if-chain) |
 | 9 | ATT&CK tagging on attacks | S | Very low | ✅ **Done** — ATT&CK id/name per attack in the registry |
 | 5 | Dry-run preview | S | Very low | ✅ **Done** — `/admin/preview_scenario` + CLI; registry-driven tables/active-days/volume (execution-based row counts a future add-on) |
-| 14 | Complete partially-wired techniques | S | Very low | 🚧 `watering_hole:phishing` + supply-chain dispatch ✅; standalone exfil/hands-on-keyboard pending (need new enums) |
+| 14 | Complete partially-wired techniques | S | Very low | ✅ Done — `watering_hole:phishing` + supply-chain dispatch, plus standalone `hands_on_keyboard:operator` (T1059) and `exfiltration:email_collection` (T1114.002) now first-class, dispatched, and campaign-aware |
 
 ### Phase 2 — Auto-generated content
 | # | Item | Effort | Risk | Notes |
@@ -647,9 +652,10 @@ rest of the plan.
 1. **Dry-run preview (#5)** — lowest risk; the registry already exposes the tables
    each actor's attacks will write, so a preview can report expected row counts/tables
    without a full run.
-2. **Complete the partially-wired techniques (#14)** — ✅ `watering_hole:phishing` and
-   `delivery:supply_chain` are now dispatched; remaining: promote data-exfil /
-   hands-on-keyboard to first-class attacks (needs new enum entries).
+2. **Complete the partially-wired techniques (#14)** — ✅ **done.** `watering_hole:phishing`
+   and `delivery:supply_chain` are dispatched, and data-exfil (`exfiltration:email_collection`)
+   and hands-on-keyboard (`hands_on_keyboard:operator`) are now first-class standalone,
+   campaign-aware techniques with registry specs + dispatch entries.
 3. **Registry-driven dispatch** — ✅ **done.** The hardcoded `if`-chain in
    `generate_activity_new` is replaced by a single declarative `ATTACK_DISPATCH` table +
    `dispatch_actor_attacks()` loop. The email collapse (`email:phishing` /

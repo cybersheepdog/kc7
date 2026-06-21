@@ -33,7 +33,8 @@ from app.server.modules.endpoints.endpoint_controller import create_process_on_h
 from app.server.modules.endpoints.security_event import SecurityEvent
 from app.server.modules.cloud.cloud_events import CloudSignInEvent, CloudStorageEvent
 from app.server.modules.authentication.authenticationEvent import AuthenticationEvent
-from app.server.modules.authentication.auth_controller import upload_auth_event_to_azure
+from app.server.modules.authentication.auth_controller import upload_auth_event_to_azure, auth_to_mail_server
+from app.server.modules.inbound_browsing.inbound_browsing_controller import gen_inbound_request, make_email_exfil_url
 from app.server.modules.organization.Company import Employee
 from app.server.modules.actors.Actor import Actor
 from app.server.utils import get_employees, get_company
@@ -553,3 +554,80 @@ def actor_establishes_persistence(actor: Actor, start_date: date, mechanism: str
         process=Process(process_name=process_name, process_commandline=commandline),
         username=host.username
     )
+
+
+# ---------------------------------------------------------------------------
+# 5. Hands-on-keyboard execution & data exfiltration
+# Previously these ran only as follow-ons to a successful email-malware detonation;
+# they are now first-class standalone techniques (#14). Both are campaign-aware: when
+# campaign mode is on they operate against the pinned host and reuse the pinned C2 IP.
+# ---------------------------------------------------------------------------
+def actor_hands_on_keyboard(actor: Actor, start_date: date) -> None:
+    """
+    An operator interactively drives a compromised host through their C2 channel: a
+    burst of local collection, archive/staging, and beacon commands spawned from
+    cmd.exe / powershell.exe, with the actor's C2 IP/domain substituted in.
+    Emits ProcessEvents.
+    """
+    host = _targeted_employees(actor, count=1)[0]
+    c2_ip = _actor_ip(actor)
+    try:
+        c2_domain = actor.get_domain()
+    except Exception:
+        c2_domain = fake.domain_name()
+
+    parent = random.choice(DISCOVERY_PARENT_PROCESSES)
+    parent_hash = File.get_random_sha256()
+    time = _base_time(actor, start_date)
+
+    commands = random.sample(
+        HANDS_ON_KEYBOARD_COMMANDS,
+        k=random.randint(4, len(HANDS_ON_KEYBOARD_COMMANDS))
+    )
+    for process_name, commandline in commands:
+        commandline = commandline.replace("{ip_address}", c2_ip).replace("{domain_name}", c2_domain)
+        create_process_on_host(
+            hostname=host.hostname,
+            timestamp=time,
+            parent_process_name=parent,
+            parent_process_hash=parent_hash,
+            process=Process(process_name=process_name, process_commandline=commandline),
+            username=host.username
+        )
+        # the operator types commands a few seconds to a couple of minutes apart
+        time = Clock.increment_time(time, random.randint(5, 120))
+
+
+def actor_email_data_exfil(actor: Actor, start_date: date) -> None:
+    """
+    Using stolen credentials, the actor signs into a user's mailbox from its own
+    infrastructure and pulls mail down over the web — credential reuse plus bulk
+    collection. Emits AuthenticationEvents (the sign-in) and InboundBrowsing (the
+    exfil web requests).
+    """
+    target = _targeted_employees(actor, count=1)[0]
+    src_ip = _actor_ip(actor)
+
+    # 1) actor authenticates to the mail server as the user, from actor infrastructure
+    login_time = _base_time(actor, start_date)
+    auth_to_mail_server(
+        timestamp=login_time,
+        username=target.username,
+        src_ip=src_ip,
+        user_agent=fake.firefox(),
+        result="Successful Login",
+        password=f"{target.username}2023"
+    )
+
+    # 2) a burst of web requests pulling mailbox contents back to the actor's IP
+    exfil_time = _working_hours_delay(actor, login_time, factor="minutes")
+    for _ in range(random.randint(2, 5)):
+        gen_inbound_request(
+            time=exfil_time,
+            src_ip=src_ip,
+            method="GET",
+            status_code="200",
+            url=make_email_exfil_url(target.username),
+            user_agent=fake.firefox()
+        )
+        exfil_time = Clock.increment_time(exfil_time, random.randint(30, 600))

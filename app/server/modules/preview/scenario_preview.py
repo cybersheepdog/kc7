@@ -41,6 +41,8 @@ _APPROX_DAILY_EVENTS = {
     "evasion:log_clearing": 5,
     "persistence:scheduled_task": 1,
     "persistence:registry_run": 1,
+    "hands_on_keyboard:operator": 6,
+    "exfiltration:email_collection": 4,
     "cloud:session_hijacking": 3,
     "cloud:token_theft": 3,
     "cloud:exfiltration_via_storage": 15,

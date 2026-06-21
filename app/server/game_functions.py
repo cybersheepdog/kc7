@@ -42,6 +42,8 @@ from app.server.modules.advanced_attacks.advanced_attacks_controller import (
     actor_cloud_session_hijacking,
     actor_cloud_exfil_via_storage,
     actor_establishes_persistence,
+    actor_hands_on_keyboard,
+    actor_email_data_exfil,
 )
 from app.server.modules.file.malware import Malware
 from app.server.modules.helpers.config_helper import load_malware_obj_from_yaml_by_file, read_list_from_file
@@ -107,6 +109,12 @@ ATTACK_DISPATCH = [
     ((AttackTypes.PERSISTENCE_REGISTRY_RUN.value,),
      lambda actor, cd, employees: actor_establishes_persistence(
          actor=actor, start_date=cd, mechanism="registry_run")),
+
+    ((AttackTypes.HANDS_ON_KEYBOARD.value,),
+     lambda actor, cd, employees: actor_hands_on_keyboard(actor=actor, start_date=cd)),
+
+    ((AttackTypes.EMAIL_DATA_EXFIL.value,),
+     lambda actor, cd, employees: actor_email_data_exfil(actor=actor, start_date=cd)),
 ]
 
 

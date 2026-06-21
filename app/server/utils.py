@@ -57,6 +57,10 @@ class AttackTypes(Enum):
     PERSISTENCE_SCHEDULED_TASK      = "persistence:scheduled_task"
     PERSISTENCE_REGISTRY_RUN        = "persistence:registry_run"
 
+    # --- Hands-on-keyboard execution & data exfiltration ---
+    HANDS_ON_KEYBOARD               = "hands_on_keyboard:operator"
+    EMAIL_DATA_EXFIL                = "exfiltration:email_collection"
+
 
 def timing(f):
     @wraps(f)

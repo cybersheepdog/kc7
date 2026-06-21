@@ -111,6 +111,8 @@ Scenarios now span the **full Cyber Kill Chain**, so investigations go far beyon
 - **Lateral movement** — **PsExec** service-binary pushes over SMB, mapping the hop-by-hop path between machines.
 - **Defense evasion** — **security/system event-log clearing** that leaves a deliberate blind spot to pivot around.
 - **Persistence** — **scheduled tasks** and **Run/RunOnce registry** keys that re-launch malware after a reboot.
+- **Hands-on-keyboard** — an operator's **interactive post-exploitation commands** (collection, archive/staging, beaconing) run on a compromised host through C2.
+- **Data exfiltration** — **stolen-credential mailbox access** followed by bulk mail download over the web.
 - **Cloud attacks** — **session/token hijacking** (impossible-travel sign-ins) and **exfiltration via public storage buckets**.
 
 **Campaign mode** 🆕 (optional, `CAMPAIGN_MODE_ENABLED` in `config.py`, off by default): when enabled, an actor's post-compromise stages (Kerberoasting → lateral movement → log clearing → persistence → cloud) all thread through **one pinned compromised host and one C2 IP** per actor, stable across the whole activity window — and they **unfold in order over time**, each stage dwelling a randomized number of working hours after the previous one rather than all happening at once. Together that turns scattered events into a single intrusion players can pivot through and attribute. With it off, each technique picks its own victim/IP and timing as before.
