@@ -475,6 +475,17 @@ score recompute (#20), anti-cheat surfacing (#26).
 
 30. **Manual score adjustments.** Award bonus/penalty points or correct a score from the
     admin UI, written through an audit trail (see #37).
+    *Status: ✅ Done (unblocked by #37). A new `ScoreAdjustment` side-table records each
+    +/- correction to a team or player with a reason and the acting admin. `/admin/score_adjust`
+    (linked from Manage Game) applies the raw delta to the live score (a player's points
+    also credit their team, mirroring a solve), records the row, and writes it to the audit
+    log (#37). Crucially, the adjustment is threaded into the **score reconciliation** (#20):
+    `reconcile`/`compute_rebuild` gained an optional `adjustments` argument (default None =
+    unchanged) — user adjustments fold into the player's recomputed total (and their team via
+    aggregation), team adjustments add to the team total — so `?apply=1` rebuilds **preserve**
+    manual corrections instead of wiping them. Verified the integration math and backward
+    compatibility. (Note: hint-cost deductions from #32 are a separate ledger and are not
+    restored by the destructive rebuild — consistent with the module's existing caveats.)*
 
 31. **Edit accepted answers + re-grade.** Let an admin fix a challenge's accepted answers
     and re-grade past `AnswerAttempt`s so early submissions aren't unfairly marked wrong.
@@ -781,7 +792,7 @@ Risk is the chance of disturbing existing behavior.
 |---|------|--------|------|-------|
 | 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | 🚧 Force-change of the default admin password ✅ (`/force_password_change` gate); observer/grader roles + backup/restore deferred |
 | 37 | Admin-action audit log | S–M | Low | ✅ Done — `AdminAudit` table + guarded `record_admin_action()` wired into game/user/config/challenge routes; read-only `/admin/audit_log` view with category filter |
-| 30 | Manual score adjustments | S | Low | Needs audit log (#37) |
+| 30 | Manual score adjustments | S | Low | ✅ Done — `/admin/score_adjust` (+/- team/player, reason, audited); folded into score-audit rebuild so `?apply=1` preserves them |
 | 33 | Answer tester | S | Very low | ✅ **Done** — author UI at `/admin/answer_tester` (picker + verdict + per-alternate breakdown) over the existing `/admin/test_answer` `explain_match` API |
 | 28 | Generation run console & history | M | Low | ✅ **Done** — run history + per-table row counts, streamed progress log, and Stop-to-cancel mid-run |
 | 31 | Edit answers + re-grade | M | Low | Re-grade `AnswerAttempt`; pairs with #21 |

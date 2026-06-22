@@ -13,7 +13,7 @@ from sqlalchemy import asc
 from sqlalchemy.sql.expression import func, select
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
-from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal
+from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment
 from app.server.modules.audit.audit_log import record_admin_action
 from app.server.modules.organization.Company import Company, Employee
 from app.server.modules.clock.Clock import Clock
@@ -2166,9 +2166,10 @@ def score_audit():
     teams = Team.query.filter(Team.id != 1).all()
     solves = Solve.query.all()
     awards = MitigationAward.query.all()
+    adjustments = ScoreAdjustment.query.all()   # manual corrections (#30) fold into the rebuild
 
     if request.args.get("apply") == "1":
-        target = compute_rebuild(users, teams, solves, awards)
+        target = compute_rebuild(users, teams, solves, awards, adjustments)
         changes = []
         for u in users:
             tgt = target["users"].get(u.id) or {"score": 0, "last_score_time": None}
@@ -2185,7 +2186,7 @@ def score_audit():
         db.session.commit()
         print("Score rebuild applied: %d change(s) across %d players, %d teams"
               % (len(changes), len(users), len(teams)))
-        report = reconcile(users, teams, solves, awards)  # should now show all-zero deltas
+        report = reconcile(users, teams, solves, awards, adjustments)  # should now show all-zero deltas
         if request.args.get("format") == "json":
             return jsonify(applied=True, changes=changes, report=report)
         body = ("SCORE REBUILD APPLIED — %d change(s):\n  %s\n\n%s"
@@ -2193,10 +2194,70 @@ def score_audit():
                    format_reconciliation_text(report)))
         return Response(body, mimetype="text/plain")
 
-    report = reconcile(users, teams, solves, awards)
+    report = reconcile(users, teams, solves, awards, adjustments)
     if request.args.get("format") == "json":
         return jsonify(report)
     return Response(format_reconciliation_text(report), mimetype="text/plain")
+
+
+@main.route("/admin/score_adjust", methods=["GET"])
+@login_required
+@roles_required("Admin")
+def score_adjust():
+    """Manual score adjustments (#30): +/- points to a team or player, with a reason.
+    Recorded so the score audit (#20) folds them into its rebuild; audited (#37)."""
+    teams = Team.query.filter(Team.id != 1).order_by(Team.name).all()
+    players = Users.query.filter(Users.team_id != 1).order_by(Users.username).all()
+    recent = [a.to_dict() for a in ScoreAdjustment.query.order_by(ScoreAdjustment.id.desc()).limit(50).all()]
+    return render_template("admin/score_adjust.html",
+                           teams=teams, players=players, recent=recent)
+
+
+@main.route("/admin/adjust_score", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def adjust_score():
+    """Apply a manual score adjustment to a user or team."""
+    target_type = request.form.get("target_type")
+    try:
+        target_id = int(request.form.get("target_id"))
+        delta = int(request.form.get("delta"))
+    except (TypeError, ValueError):
+        flash("Enter a whole number of points.", "danger")
+        return redirect(url_for("main.score_adjust"))
+    reason = (request.form.get("reason") or "").strip() or None
+
+    if target_type not in ("user", "team") or delta == 0:
+        flash("Pick a target and a non-zero point change.", "danger")
+        return redirect(url_for("main.score_adjust"))
+
+    # Apply the raw delta (no floor) so the live score stays consistent with what the
+    # score-audit rebuild reconstructs from the recorded adjustment.
+    if target_type == "user":
+        u = db.session.get(Users, target_id)
+        if not u or u.team_id == 1:
+            flash("Player not found.", "danger")
+            return redirect(url_for("main.score_adjust"))
+        u.score = (u.score or 0) + delta
+        if u.team:   # mirror solve crediting: a player's points are also their team's
+            u.team.score = (u.team.score or 0) + delta
+        label = u.username
+    else:
+        t = db.session.get(Team, target_id)
+        if not t or t.id == 1:
+            flash("Team not found.", "danger")
+            return redirect(url_for("main.score_adjust"))
+        t.score = (t.score or 0) + delta
+        label = t.name
+
+    db.session.add(ScoreAdjustment(target_type=target_type, target_id=target_id,
+                                   delta=delta, reason=reason,
+                                   admin_username=getattr(current_user, "username", None)))
+    db.session.commit()
+    record_admin_action("score.adjust", target="%s:%s" % (target_type, label),
+                        detail="delta=%+d%s" % (delta, (" reason=" + reason) if reason else ""))
+    flash("Adjusted %s by %+d points." % (label, delta), "success")
+    return redirect(url_for("main.score_adjust"))
 
 
 @main.route("/admin/run_history")

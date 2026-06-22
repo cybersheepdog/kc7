@@ -191,6 +191,10 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Plain-text table by default; `?format=json` for structured data. A **negative delta** always flags a real desync. Indicator awards are now recorded per submission, so for games run since that change the recompute is **exact** (any non-zero delta is a desync); for older games a positive delta just reflects unrecorded historical indicator points.
 - Read-only by default. Add `?apply=1` to perform a **destructive rebuild**: overwrite every player's and team's stored score and last-score time with the values recomputed from the `Solve` + `MitigationAward` records (use after editing/deleting challenges or answers to resync standings). It returns the list of changes applied.
 
+#### Manual Score Adjustments (`/admin/score_adjust`) 🆕
+- Add or subtract points from a team or player (negative to subtract), with a reason — for awarding a bonus, applying a penalty, or correcting a mistake. Each adjustment is written to the Audit Log.
+- Adjustments are recorded in their own ledger and **folded into the Score Audit's rebuild**, so a `?apply=1` recompute preserves them instead of wiping them. (A player's adjustment also credits their team, mirroring how a solve does.)
+
 #### Answer Tester (`/admin/test_answer`) 🆕
 - Preview how a submitted answer would grade **before** publishing a challenge, including normalization/defang. Returns a JSON explanation: the normalized submitted value, and for each accepted answer its normalized form and whether it matches.
 - Params: `answer=<value>` plus either `challenge_id=<id>` or `accepted=<;-separated answers>`. Example: `?answer=hxxp://bad[.]com/&accepted=bad.com` reports a match against `bad.com`.

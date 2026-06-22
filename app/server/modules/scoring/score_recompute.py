@@ -44,6 +44,22 @@ def indicator_points_by_user(awards) -> dict:
     return out
 
 
+def _adjustments_by_target(adjustments):
+    """Split manual ScoreAdjustment deltas into ({user_id: delta}, {team_id: delta}) (#30)."""
+    uadj, tadj = {}, {}
+    for adj in adjustments or []:
+        delta = getattr(adj, "delta", 0) or 0
+        ttype = getattr(adj, "target_type", None)
+        tid = getattr(adj, "target_id", None)
+        if tid is None:
+            continue
+        if ttype == "user":
+            uadj[tid] = uadj.get(tid, 0) + delta
+        elif ttype == "team":
+            tadj[tid] = tadj.get(tid, 0) + delta
+    return uadj, tadj
+
+
 def latest_solve_time_by_user(solves) -> dict:
     """Most recent solved_at per user_id (None-safe)."""
     out = {}
@@ -56,7 +72,7 @@ def latest_solve_time_by_user(solves) -> dict:
     return out
 
 
-def reconcile(users, teams, solves, awards=None) -> dict:
+def reconcile(users, teams, solves, awards=None, adjustments=None) -> dict:
     """
     Compare stored scores to the totals recomputed from source-of-truth records:
     challenge points from Solve, plus indicator points from MitigationAward (if
@@ -72,6 +88,7 @@ def reconcile(users, teams, solves, awards=None) -> dict:
     """
     cp_by_user = challenge_points_by_user(solves)
     ip_by_user = indicator_points_by_user(awards)
+    uadj, tadj = _adjustments_by_target(adjustments)
     has_awards = bool(awards)
 
     user_rows = []
@@ -79,7 +96,8 @@ def reconcile(users, teams, solves, awards=None) -> dict:
     for u in users:
         ucp = cp_by_user.get(u.id, 0)
         uip = ip_by_user.get(u.id, 0)
-        recomputed = ucp + uip
+        uaj = uadj.get(u.id, 0)
+        recomputed = ucp + uip + uaj
         stored = u.score or 0
         user_rows.append({
             "user_id": u.id,
@@ -87,6 +105,7 @@ def reconcile(users, teams, solves, awards=None) -> dict:
             "stored_score": stored,
             "challenge_points": ucp,
             "indicator_points": uip,
+            "adjustment_points": uaj,
             "recomputed_total": recomputed,
             "delta": stored - recomputed,
         })
@@ -95,7 +114,9 @@ def reconcile(users, teams, solves, awards=None) -> dict:
 
     team_rows = []
     for t in teams:
-        tr = team_recomputed.get(t.id, 0)
+        # team total = sum of members' recomputed (incl. their user adjustments) + any
+        # team-level manual adjustments.
+        tr = team_recomputed.get(t.id, 0) + tadj.get(t.id, 0)
         stored = t.score or 0
         team_rows.append({
             "team_id": t.id,
@@ -177,7 +198,7 @@ def _latest_time_by_user(records, attr: str) -> dict:
     return out
 
 
-def compute_rebuild(users, teams, solves, awards=None) -> dict:
+def compute_rebuild(users, teams, solves, awards=None, adjustments=None) -> dict:
     """
     Compute the authoritative ``score`` and ``last_score_time`` for every user and team
     purely from the source-of-truth records (Solve + MitigationAward). Pure — mutates
@@ -195,6 +216,7 @@ def compute_rebuild(users, teams, solves, awards=None) -> dict:
     """
     cp = challenge_points_by_user(solves)
     ip = indicator_points_by_user(awards)
+    uadj, tadj = _adjustments_by_target(adjustments)
     latest_solve = _latest_time_by_user(solves, "solved_at")
     latest_award = _latest_time_by_user(awards, "awarded_at")
 
@@ -203,7 +225,7 @@ def compute_rebuild(users, teams, solves, awards=None) -> dict:
     team_time = {}
     for u in users:
         uid = u.id
-        score = cp.get(uid, 0) + ip.get(uid, 0)
+        score = cp.get(uid, 0) + ip.get(uid, 0) + uadj.get(uid, 0)
         times = [t for t in (latest_solve.get(uid), latest_award.get(uid)) if t is not None]
         last = max(times) if times else None
         user_out[uid] = {"score": score, "last_score_time": last}
@@ -218,6 +240,8 @@ def compute_rebuild(users, teams, solves, awards=None) -> dict:
 
     team_out = {}
     for t in teams:
-        team_out[t.id] = {"score": team_score.get(t.id, 0), "last_score_time": team_time.get(t.id)}
+        # add team-level manual adjustments on top of the members' sum
+        team_out[t.id] = {"score": team_score.get(t.id, 0) + tadj.get(t.id, 0),
+                          "last_score_time": team_time.get(t.id)}
 
     return {"users": user_out, "teams": team_out}

@@ -1,0 +1,84 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-sliders-h mr-2 text-primary"></i>Manual Score Adjustments
+  </h1>
+  <a href="/admin/score_audit" target="_blank" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-balance-scale mr-1"></i> Score Audit
+  </a>
+</div>
+
+<p class="text-muted">
+  Add or subtract points from a team or player (use a negative number to subtract), with a
+  reason. Adjustments are recorded and folded into the Score Audit's rebuild, so they
+  survive a recompute — and every change is written to the Audit Log.
+</p>
+
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Apply an adjustment</h6></div>
+      <div class="card-body">
+        <form method="post" action="/admin/adjust_score" class="form-row align-items-end"
+              onsubmit="var s=document.getElementById('targetSelect').value.split(':'); document.getElementById('targetType').value=s[0]; document.getElementById('targetIdHidden').value=s[1];">
+          <div class="form-group col-md-5">
+            <label class="small font-weight-bold mb-1">Target</label>
+            <select id="targetSelect" class="form-control" required>
+              <optgroup label="Teams">
+                {% for t in teams %}<option value="team:{{ t.id }}">Team · {{ t.name }} ({{ t.score or 0 }})</option>{% endfor %}
+              </optgroup>
+              <optgroup label="Players">
+                {% for p in players %}<option value="user:{{ p.id }}">{{ p.username }} ({{ p.score or 0 }})</option>{% endfor %}
+              </optgroup>
+            </select>
+            <input type="hidden" name="target_type" id="targetType">
+            <input type="hidden" name="target_id" id="targetIdHidden">
+          </div>
+          <div class="form-group col-md-3">
+            <label class="small font-weight-bold mb-1">Points (+/-)</label>
+            <input type="number" name="delta" class="form-control" placeholder="e.g. -50" required>
+          </div>
+          <div class="form-group col-md-4">
+            <label class="small font-weight-bold mb-1">Reason</label>
+            <input type="text" name="reason" class="form-control" placeholder="why">
+          </div>
+          <div class="form-group col-12 mb-0">
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-check mr-1"></i> Apply adjustment
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Recent adjustments</h6></div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:420px; overflow-y:auto;">
+          <table class="table table-sm mb-0">
+            <thead class="thead-light"><tr><th>When</th><th>Target</th><th class="text-right">Δ</th><th>Reason</th><th>By</th></tr></thead>
+            <tbody>
+              {% for a in recent %}
+              <tr>
+                <td class="small text-muted">{{ a.created_at }}</td>
+                <td class="small">{{ a.target_type }} #{{ a.target_id }}</td>
+                <td class="text-right font-weight-bold {{ 'text-success' if a.delta > 0 else 'text-danger' }}">{{ '%+d' % a.delta }}</td>
+                <td class="small">{{ a.reason }}</td>
+                <td class="small text-muted">{{ a.admin }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" class="text-center text-muted py-4">No adjustments yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

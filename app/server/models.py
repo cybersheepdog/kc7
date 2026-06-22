@@ -363,6 +363,39 @@ class MitigationAward(AuthBase):
         return '<MitigationAward user=%r indicator=%r>' % (self.user_id, self.indicator)
 
 
+class ScoreAdjustment(AuthBase):
+    """
+    A manual score correction by an admin (#30): +/- points to a user or a team, with a
+    reason. Recorded so the score reconciliation (#20) can fold it into the authoritative
+    rebuild (otherwise ?apply=1 would wipe it), and so adjustments are auditable.
+    """
+    __tablename__ = "score_adjustments"
+
+    target_type    = db.Column(db.String(10), nullable=False)   # "user" | "team"
+    target_id      = db.Column(db.Integer, nullable=False)
+    delta          = db.Column(db.Integer, nullable=False)       # may be negative
+    reason         = db.Column(db.String(300), nullable=True)
+    admin_username = db.Column(db.String(150), nullable=True)
+    created_at     = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, target_type, target_id, delta, reason=None, admin_username=None):
+        self.target_type    = target_type
+        self.target_id      = int(target_id)
+        self.delta          = int(delta)
+        self.reason         = (reason or None) and str(reason)[:300]
+        self.admin_username = (admin_username or None) and str(admin_username)[:150]
+        self.created_at     = datetime.datetime.now()
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "target_type": self.target_type, "target_id": self.target_id,
+            "delta": self.delta, "reason": self.reason or "",
+            "admin": self.admin_username or "",
+        }
+
+
 class GameRunLog(AuthBase):
     """
     A record of each data-generation run, for facilitator observability — when a game
