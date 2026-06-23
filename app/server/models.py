@@ -618,6 +618,35 @@ class MaliciousIndicator(AuthBase):
         return '<MaliciousIndicator %r type=%r>' % (self.value, self.itype)
 
 
+class UserBadge(AuthBase):
+    """
+    Records that a user earned an achievement badge. The badge CATALOG lives in code
+    (app/server/modules/badges/badges.py) — this table stores only awards, so it
+    auto-creates with db.create_all and a player with no row here simply has no badges.
+    ``awarded_by`` is None for auto-earned badges or an admin username for manual grants.
+    """
+    __tablename__  = "user_badges"
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'slug', name='uq_user_badge'),
+    )
+
+    user_id     = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
+    slug        = db.Column(db.String(50), nullable=False)
+    earned_at   = db.Column(db.DateTime, nullable=False)
+    awarded_by  = db.Column(db.String(80), nullable=True)
+
+    user = db.relationship('Users', backref=db.backref('badges', lazy='dynamic'))
+
+    def __init__(self, user_id, slug, awarded_by=None):
+        self.user_id    = user_id
+        self.slug       = slug
+        self.awarded_by = awarded_by
+        self.earned_at  = datetime.datetime.now()
+
+    def __repr__(self):
+        return '<UserBadge user=%r slug=%r>' % (self.user_id, self.slug)
+
+
 ##########################################################
 # ADX connection configuration (singleton, stored in DB)
 ##########################################################

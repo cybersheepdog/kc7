@@ -108,6 +108,26 @@ Answers are also **normalized before comparison** 🆕, so structurally-identica
 
 **Scoring** is time-weighted by default (earlier solves earn more). Optionally 🆕, **dynamic / first-blood scoring** can be enabled in `config.py` (`DYNAMIC_SCORING_ENABLED`): a challenge's value then decays as more teams solve it (CTFd-style, tunable via `DYNAMIC_SCORING_MINIMUM` / `DYNAMIC_SCORING_DECAY`) and the first solver earns a `FIRST_BLOOD_BONUS_PCT` bonus. It's off by default, so existing scoring is unchanged unless you turn it on.
 
+#### Achievement badges 🆕
+Players earn collectible **badges** — each with its own unique medallion graphic — as they play, à la classic CTFs. A "Badge unlocked!" toast pops the moment one is earned, and **My badges** (in the sidebar) shows a shelf of what's been collected plus the greyed-out ones still to chase. The **scoreboard** shows a badge-count chip next to each player that links to their public showcase (`/u/<name>/badges`). Badges are derived entirely from data the game already records, so they cost nothing extra and don't touch scoring:
+
+There are **46 badges** out of the box, across these families:
+
+- **Milestones** — First steps, Apprentice, Analyst, Threat hunter (1 / 5 / 10 / 25 solves).
+- **First blood** — First blood (be first to solve) and Quick draw (3 first-bloods).
+- **Mastery** — Specialist (clear a category), Full spectrum (every category), Clean sweep (every challenge), Flawless (clean sweep with zero wrong answers).
+- **Kill chain & ATT&CK** — Full kill chain (one solve in every category), MITRE maven (8 distinct ATT&CK techniques), Attribution ace (solve an attribution challenge).
+- **Skill** — Speed demon (solve while the time bonus is high), Sharpshooter (5 no-wrong-guess solves), Sniper (10), Purist (10 solves with no hints), Bloodhound (10 indicators).
+- **Indicators** — Four of a kind (a domain, IP, email and hash), Hash slinger (10 hashes), DNS detective (10 domains).
+- **Score** — Century, High roller, Five figures (100 / 1,000 / 10,000 points).
+- **Leaderboard** — Podium (top 3), Champion (#1), King of the hill (lead by 2×), Giant killer (first blood on the highest-value challenge).
+- **Team** — Carry (top scorer on your team), Backbone (every teammate solves something), Dream team (your team collectively clears a category).
+- **Timing** — Weekend warrior, Lightning round (5 solves in an hour), Marathoner (3 different days), Opening act (within the first hour).
+- **Flavor** — Night owl, Early bird, Comeback kid, On fire (3 in 10 min), Ghost (full clear, no hints ever), Persistent (solve after 10+ wrong tries), Phoenix (5 solves you'd previously gotten wrong), Clutch (final minutes of a timed game).
+- **Discretionary** (granted by a facilitator) — MVP, Good sportsmanship, Team player.
+
+The badge **catalog lives in code** (`app/server/modules/badges/badges.py`); only awards are stored, in a `UserBadge` side-table that auto-creates with no migration. Facilitators grant/revoke the discretionary badges from **Admin Central → Badges** (`/admin/badges`), and every manual grant is written to the Audit Log. To add a new badge, drop an SVG in `static/images/badges/` and add one catalog entry with a predicate.
+
 #### Rounds (Named Game Sessions)
 Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
 

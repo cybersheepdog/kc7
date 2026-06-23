@@ -1,0 +1,59 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-medal mr-2 text-warning"></i>Badges</h1>
+  <a href="/admin" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Admin Central</a>
+</div>
+
+<p class="text-muted">
+  Most badges are earned automatically as players solve challenges and find indicators. Below
+  you can grant or revoke the <b>discretionary</b> badges (MVP, sportsmanship, team player) by
+  hand. Every grant and revoke is written to the Audit Log.
+</p>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Players</h6></div>
+  <div class="card-body table-responsive">
+    <table class="table table-sm table-hover">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Badges</th>
+          <th style="min-width:320px">Manual badges</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td><a href="/u/{{ u.username }}/badges">{{ u.username }}</a></td>
+          <td><span class="badge badge-primary badge-pill">{{ u.earned_count }} / {{ u.total }}</span></td>
+          <td>
+            {% for mb in manual_badges %}
+              {% if mb.slug in u.manual_slugs %}
+                <form method="post" action="/admin/badges/revoke" class="d-inline">
+                  <input type="hidden" name="user_id" value="{{ u.id }}">
+                  <input type="hidden" name="slug" value="{{ mb.slug }}">
+                  <button class="btn btn-sm btn-success mb-1" title="{{ mb.description }} — click to revoke">
+                    <i class="fas fa-check mr-1"></i>{{ mb.name }} <i class="fas fa-times ml-1 text-white-50"></i>
+                  </button>
+                </form>
+              {% else %}
+                <form method="post" action="/admin/badges/award" class="d-inline">
+                  <input type="hidden" name="user_id" value="{{ u.id }}">
+                  <input type="hidden" name="slug" value="{{ mb.slug }}">
+                  <button class="btn btn-sm btn-outline-secondary mb-1" title="{{ mb.description }}">
+                    <i class="fas fa-plus mr-1"></i>{{ mb.name }}
+                  </button>
+                </form>
+              {% endif %}
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

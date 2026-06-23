@@ -900,6 +900,7 @@ Risk is the chance of disturbing existing behavior.
 | 26 | Anti-cheat surfacing | M | Low | ✅ Done — `analyze_attempts` flags shared answers / fast copies / burst solving; "Integrity flags" panel on the live feed (advisory, never auto-penalizes) |
 | 22 | First-blood / dynamic scoring | M | Medium | ✅ **Done** — `dynamic_scoring` module; opt-in via `DYNAMIC_SCORING_ENABLED` (off by default), tunable min/decay/first-blood% |
 | 23 | Mitigation submission precision | S | Medium | ✅ Done — opt-in `MITIGATION_WRONG_PENALTY` (reconcilable via ScoreAdjustment) + `MITIGATION_RATE_LIMIT_SECONDS`; both default 0 = unchanged |
+| ★ | Achievement badges (gamification) | M | Low | ✅ Done — **46-badge** catalog (`modules/badges/badges.py`) w/ unique SVG medallions across milestones / first-blood / mastery / kill-chain+ATT&CK / indicators / score / leaderboard / team / timing / flavor / discretionary; pure predicates over recorded data, auto-awarded after solves/indicators (best-effort), manual grants at `/admin/badges` (audited); player shelf `/badges` + earn toast; `UserBadge` side-table, no migration |
 
 ### Phase 7 — Admin & operations (independent track)
 | # | Item | Effort | Risk | Notes |

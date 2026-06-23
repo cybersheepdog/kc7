@@ -198,6 +198,7 @@
             feedback.html('<div class="alert alert-info py-2 mb-0">Already solved!</div>');
           } else {
             toastr['success']('+' + data.points_earned + ' points!', 'Correct!');
+            if (window.showBadgeToasts) window.showBadgeToasts(data.new_badges);
             var banner = $('<div class="alert alert-success mb-0 py-2">'
               + '<i class="fas fa-check mr-1"></i> Correct! <strong>+' + data.points_earned + ' pts</strong>'
               + '</div>');

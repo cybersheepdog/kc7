@@ -1,0 +1,62 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<style>
+  .badge-grid { display:flex; flex-wrap:wrap; gap:1.25rem; }
+  .badge-card { width:130px; text-align:center; }
+  .badge-card img { width:84px; height:84px; }
+  .badge-card.locked img { filter:grayscale(1); opacity:.32; }
+  .badge-card .b-name { font-size:.85rem; font-weight:700; margin-top:.4rem; color:#3a3b45; }
+  .badge-card .b-desc { font-size:.72rem; color:#858796; line-height:1.25; }
+  .badge-card .b-when { font-size:.66rem; color:#b7b9cc; margin-top:.15rem; }
+</style>
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-medal mr-2 text-warning"></i>
+    {% if is_self %}My badges{% else %}{{ who }}'s badges{% endif %}
+  </h1>
+  <span class="badge badge-pill badge-primary p-2">
+    {{ data.earned_count }} / {{ data.total }} earned
+  </span>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Earned</h6></div>
+  <div class="card-body">
+    {% if data.earned %}
+    <div class="badge-grid">
+      {% for b in data.earned %}
+      <div class="badge-card" title="{{ b.description }}">
+        <img src="{{ url_for('static', filename='images/badges/' + b.icon) }}" alt="{{ b.name }}">
+        <div class="b-name">{{ b.name }}</div>
+        <div class="b-desc">{{ b.description }}</div>
+        {% if b.awarded_by %}<div class="b-when">awarded by {{ b.awarded_by }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No badges yet — solve a challenge to earn your first one.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if is_self and data.locked %}
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Still to earn</h6></div>
+  <div class="card-body">
+    <div class="badge-grid">
+      {% for b in data.locked %}
+      <div class="badge-card locked" title="{{ b.description }}">
+        <img src="{{ url_for('static', filename='images/badges/' + b.icon) }}" alt="">
+        <div class="b-name">{{ b.name }}</div>
+        <div class="b-desc">{{ b.description }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="text-muted small mt-3 mb-0">Special badges granted by facilitators aren't shown here.</p>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

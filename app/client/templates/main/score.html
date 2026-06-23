@@ -197,7 +197,17 @@
         var row = $('<tr>');
         row.append($('<td>').text(rank + medal));
         row.append($('<td>').append($('<span>').addClass(d.cls).text(d.txt)));
-        row.append($('<td>').text(name));
+        var nameCell = $('<td>').text(name);
+        var bcount = (INDIVIDUAL.badges && INDIVIDUAL.badges[i]) || 0;
+        if (bcount > 0) {
+          nameCell.append(
+            $('<a class="badge badge-pill badge-warning ml-2" style="text-decoration:none">')
+              .attr('href', '/u/' + encodeURIComponent(name) + '/badges')
+              .attr('title', bcount + ' badge' + (bcount === 1 ? '' : 's') + ' — view showcase')
+              .html('<i class="fas fa-medal"></i> ' + bcount)
+          );
+        }
+        row.append(nameCell);
         row.append($('<td>').append(
           $('<span class="badge badge-secondary">').text(INDIVIDUAL.teams[i])
         ));

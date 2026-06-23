@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 244 64" width="244" height="64" role="img" aria-label="KC7 Cyber challenge">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#4e73df"/>
+  <path d="M22 22 L33 32 L22 42" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="37" y="39" width="14" height="4.5" rx="2.2" fill="#36b9cc"/>
+  <text x="76" y="40" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#2e2f45">KC7</text>
+  <text x="78" y="55" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="1" fill="#6c7293">Cyber challenge</text>
+</svg>

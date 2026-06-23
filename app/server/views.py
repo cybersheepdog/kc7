@@ -13,7 +13,7 @@ from sqlalchemy import asc
 from sqlalchemy.sql.expression import func, select
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
-from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame
+from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame, UserBadge
 from app.server.modules.audit.audit_log import record_admin_action
 from app.server.modules.organization.Company import Company, Employee
 from app.server.modules.clock.Clock import Clock
@@ -490,6 +490,16 @@ def update_deny_list():
         current_user.team._mitigations = json.dumps(display_list)
         db.session.commit()
 
+        # Award any newly-earned achievement badges (best-effort; e.g. Bloodhound for
+        # finding indicators). Never breaks indicator scoring.
+        new_badges = []
+        try:
+            from app.server.modules.badges.badges import evaluate_and_award
+            new_badges = [{"name": b.name, "icon": b.icon, "tier": b.tier}
+                          for b in evaluate_and_award(current_user)]
+        except Exception as _be:
+            print("badge hook error:", _be)
+
         return jsonify(
             success=current_user.team._mitigations,
             points_earned=points_earned,
@@ -498,6 +508,7 @@ def update_deny_list():
             user_score=current_user.score,
             correct_indicators=correct_new,
             wrong_indicators=wrong_new,
+            new_badges=new_badges,
         )
     except Exception as e:
         print(e)
@@ -881,12 +892,20 @@ def _compute_leaderboard():
     # otherwise lazy-load the team once per player on every leaderboard poll.
     from sqlalchemy.orm import joinedload
     players = db.session.query(Users).options(joinedload(Users.team)).filter(Users.team_id != 1).all()
+
+    # One grouped query for badge counts (avoids an N+1 across players).
+    badge_counts = dict(
+        db.session.query(UserBadge.user_id, func.count(UserBadge.id))
+        .group_by(UserBadge.user_id).all()
+    )
+
     player_data = [
         {
             "username": p.username,
             "team":     p.team.name if p.team else "--",
             "score":    p.score or 0,
             "time":     p.last_score_time.isoformat() if p.last_score_time else None,
+            "badges":   int(badge_counts.get(p.id, 0)),
         }
         for p in players
     ]
@@ -896,6 +915,7 @@ def _compute_leaderboard():
         "players": [p["username"] for p in player_data],
         "scores":  [p["score"]   for p in player_data],
         "teams":   [p["team"]    for p in player_data],
+        "badges":  [p["badges"]  for p in player_data],
     }
 
     return {"SCORES": SCORES, "INDIVIDUAL": INDIVIDUAL}
@@ -1243,6 +1263,15 @@ def submit_answer():
               + " challenge=" + challenge.name
               + " +" + str(points_earned) + " pts")
 
+        # Award any newly-earned achievement badges (best-effort; never breaks the solve).
+        new_badges = []
+        try:
+            from app.server.modules.badges.badges import evaluate_and_award
+            new_badges = [{"name": b.name, "icon": b.icon, "tier": b.tier}
+                          for b in evaluate_and_award(current_user)]
+        except Exception as _be:
+            print("badge hook error:", _be)
+
         return jsonify(
             correct=True,
             already_solved=False,
@@ -1250,6 +1279,7 @@ def submit_answer():
             user_score=current_user.score,
             team_score=current_user.team.score,
             message="Correct! +" + str(points_earned) + " points!",
+            new_badges=new_badges,
         )
     except Exception as e:
         print("submit_answer error: " + str(e))
@@ -2215,6 +2245,82 @@ def backup_restore():
         msg += " Database restore staged — restart the app to apply it (the current DB is backed up automatically on restart)."
     flash(msg, "success")
     return redirect(url_for("main.backup_page"))
+
+
+# ---------------------------------------------------------------------------
+# Achievement badges (gamification).
+# ---------------------------------------------------------------------------
+@main.route("/badges")
+@login_required
+def my_badges():
+    """A player's badge shelf: earned badges plus the locked ones still to chase."""
+    from app.server.modules.badges.badges import get_user_badges
+    data = get_user_badges(current_user.id)
+    return render_template("main/badges.html", data=data,
+                           who=current_user.username, is_self=True)
+
+
+@main.route("/u/<username>/badges")
+@login_required
+def player_badges(username):
+    """Public showcase of another player's earned badges."""
+    from app.server.modules.badges.badges import get_user_badges
+    user = Users.query.filter_by(username=username).first()
+    if not user:
+        flash("No such player.", "error")
+        return redirect(url_for("main.my_badges"))
+    data = get_user_badges(user.id)
+    return render_template("main/badges.html", data=data, who=user.username, is_self=False)
+
+
+@main.route("/admin/badges", methods=["GET"])
+@roles_required("Admin")
+@login_required
+def admin_badges():
+    """Facilitator view: each player's badge count, with controls to grant/revoke manual badges."""
+    from app.server.modules.badges.badges import MANUAL_BADGES, get_user_badges
+    rows = []
+    for u in Users.query.order_by(Users.username).all():
+        ub = get_user_badges(u.id)
+        rows.append({
+            "id": u.id, "username": u.username,
+            "earned_count": ub["earned_count"], "total": ub["total"],
+            "manual_slugs": {e["slug"] for e in ub["earned"] if e.get("manual")},
+        })
+    return render_template("admin/badges.html", users=rows, manual_badges=MANUAL_BADGES)
+
+
+@main.route("/admin/badges/award", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def admin_award_badge():
+    from app.server.modules.badges.badges import award_manual, BADGES_BY_SLUG
+    uid = int(request.form.get("user_id", 0) or 0)
+    slug = (request.form.get("slug", "") or "").strip()
+    user = db.session.get(Users, uid)
+    if user and slug in BADGES_BY_SLUG and award_manual(uid, slug, current_user.username):
+        record_admin_action("badge.award", target=user.username, detail="badge=" + slug)
+        flash("Awarded '%s' to %s." % (BADGES_BY_SLUG[slug].name, user.username), "success")
+    else:
+        flash("Could not award badge (player already has it, or invalid badge).", "warning")
+    return redirect(url_for("main.admin_badges"))
+
+
+@main.route("/admin/badges/revoke", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def admin_revoke_badge():
+    from app.server.modules.badges.badges import revoke_badge, BADGES_BY_SLUG
+    uid = int(request.form.get("user_id", 0) or 0)
+    slug = (request.form.get("slug", "") or "").strip()
+    user = db.session.get(Users, uid)
+    if user and revoke_badge(uid, slug):
+        record_admin_action("badge.revoke", target=user.username, detail="badge=" + slug)
+        name = BADGES_BY_SLUG[slug].name if slug in BADGES_BY_SLUG else slug
+        flash("Revoked '%s' from %s." % (name, user.username), "success")
+    else:
+        flash("Could not revoke badge.", "warning")
+    return redirect(url_for("main.admin_badges"))
 
 
 @main.route("/admin/game_guide")
