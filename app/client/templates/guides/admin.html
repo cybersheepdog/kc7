@@ -1,0 +1,138 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-user-shield mr-2 text-primary"></i>Admin Guide</h1>
+  <span class="badge badge-primary p-2">Full control</span>
+</div>
+
+<div class="alert alert-primary">
+  As an <strong>Admin</strong> you control the entire event end to end. This guide is organized by the order
+  you'll usually do things: <strong>build a scenario → connect Azure → run the game → manage challenges &amp;
+  scoring → people &amp; monitoring → outputs &amp; resilience</strong>. Everything below lives in the
+  <strong>Admin Central</strong> menu in the sidebar.
+</div>
+
+<h5 class="text-gray-700 mb-2"><i class="fas fa-drafting-compass mr-1"></i> 1 · Build a scenario</h5>
+<div class="card shadow mb-4"><div class="card-body">
+  <ul class="mb-0">
+    <li><a href="/admin/manage_scenario"><strong>Manage Scenario</strong></a> — edit the actors, malware,
+        company profile, and realism content pack in the browser. Every save runs the config validator first,
+        so a bad config is rejected with clear errors instead of breaking generation.</li>
+    <li><a href="/admin/scenario_wizard"><strong>Scenario Wizard</strong></a> — scaffold a validator-clean
+        actor (and malware) from an archetype in a few clicks, then one-click its challenges and guide.</li>
+    <li><a href="/admin/scenario_templates"><strong>Scenario Templates</strong></a> — save the whole current
+        scenario (company, actors, malware, content pack, challenges) as a reusable bundle, and load it later
+        to spin the same event back up. Loading writes configs and adds challenges but never touches live scores.</li>
+  </ul>
+</div></div>
+
+<h5 class="text-gray-700 mb-2"><i class="fas fa-cloud mr-1"></i> 2 · Connect Azure Data Explorer</h5>
+<div class="card shadow mb-4"><div class="card-body">
+  <ul class="mb-0">
+    <li><a href="/admin/adx_config"><strong>ADX Configuration</strong></a> — enter your cluster URI, ingest URI,
+        database, tenant, client ID and secret. Stored in the DB and applied immediately (no restart). GUI
+        settings take priority over <code>config.py</code>.</li>
+    <li><a href="/admin/manage_database"><strong>Manage ADX Perms</strong></a> — grant players viewer access so
+        they can run KQL in the Azure Data Explorer web UI.</li>
+  </ul>
+  <p class="text-muted small mb-0 mt-2">No Azure cluster yet? In development, <code>ADX_DEBUG_MODE</code> prints
+     generated data instead of uploading, so you can exercise the pipeline offline.</p>
+</div></div>
+
+<h5 class="text-gray-700 mb-2"><i class="fas fa-play-circle mr-1"></i> 3 · Run the game</h5>
+<div class="card shadow mb-4"><div class="card-body">
+  <ul class="mb-0">
+    <li><a href="/admin/manage_game"><strong>Manage the Game</strong></a> — start / stop / restart data
+        generation with a live progress bar and a streamed log; you can cancel a long run mid-flight. Restart
+        clears scores, solves, and generated data.</li>
+    <li><a href="/admin/schedule_game"><strong>Schedule Game</strong></a> — for unattended events, auto-start
+        generation and/or auto-stop scoring at set times (requires <code>GAME_SCHEDULER_ENABLED</code>).</li>
+    <li><a href="/admin/run_history"><strong>Run History</strong></a> — review each run's timing, status, and
+        per-table row counts.</li>
+  </ul>
+</div></div>
+
+<h5 class="text-gray-700 mb-2"><i class="fas fa-question-circle mr-1"></i> 4 · Challenges</h5>
+<div class="card shadow mb-4"><div class="card-body">
+  <ul class="mb-0">
+    <li><a href="/admin/manage_challenges"><strong>Manage Challenges</strong></a> — create challenges by hand,
+        bulk-import via CSV, or <strong>Auto-generate</strong> a set straight from the scenario's ground truth
+        (malicious IPs/domains, phishing senders, malware families/hashes, attribution, ATT&amp;CK ids). Run
+        auto-generate <em>after</em> generating a game, since most facts only exist once data is produced.</li>
+    <li><a href="/admin/challenge_gating"><strong>Hints &amp; gating</strong></a> — optionally give a challenge a
+        point-cost hint, a timed unlock, and/or a prerequisite challenge. Anything you don't configure behaves
+        exactly as before.</li>
+  </ul>
+</div></div>
+
+<h5 class="text-gray-700 mb-2"><i class="fas fa-balance-scale mr-1"></i> 5 · Scoring &amp; integrity</h5>
+<div class="card shadow mb-4"><div class="card-body">
+  <ul class="mb-0">
+    <li><a href="/admin/score_audit"><strong>Score Audit</strong></a> — reconcile every player/team total against
+        the recorded solves, indicator awards, hint costs and adjustments; <code>?apply=1</code> rebuilds scores
+        and times from the records.</li>
+    <li><a href="/admin/score_adjust"><strong>Manual Score Adjustments</strong></a> — add/subtract points with a
+        reason (audited, reconcilable).</li>
+    <li><a href="/admin/regrade_challenge"><strong>Re-grade</strong></a> — after fixing a challenge's accepted
+        answers, retroactively credit players who answered correctly earlier (scored at their original time).</li>
+    <li><a href="/admin/answer_tester"><strong>Answer Tester</strong></a> — confirm a challenge grades the way you
+        expect before publishing, with a normalization breakdown.</li>
+  </ul>
+  <p class="text-muted small mb-0 mt-2">These four grading tools are also available to the <strong>Grader</strong>
+     role, so you can delegate adjudication.</p>
+</div></div>
+
+<h5 class="text-gray-700 mb-2"><i class="fas fa-users-cog mr-1"></i> 6 · People &amp; access</h5>
+<div class="card shadow mb-4"><div class="card-body">
+  <ul class="mb-0">
+    <li><a href="/admin/users"><strong>Manage Users</strong></a> — create accounts, reset passwords, change teams,
+        and set each user's role: <strong>Player</strong>, read-only <strong>Observer</strong>,
+        <strong>Grader</strong> (Observer + grading), or <strong>Admin</strong>. Roles are exclusive and never
+        auto-assigned.</li>
+    <li><a href="/admin/teams"><strong>Manage Teams</strong></a> — create and manage teams and their aggregate scores.</li>
+    <li><a href="/admin/badges"><strong>Badges</strong></a> — most badges are earned automatically; here you grant
+        or revoke the discretionary ones (MVP, Good sportsmanship, Team player). Audited.</li>
+    <li><a href="/admin/manage_indicators"><strong>Malicious Indicators</strong></a> — seed indicators for scoring
+        when running against a pre-existing ADX dataset.</li>
+  </ul>
+  <p class="text-muted small mb-0 mt-2">Note: if the seeded <code>admin</code> account still uses the default
+     password, the app forces a password change before anything else can be done.</p>
+</div></div>
+
+<h5 class="text-gray-700 mb-2"><i class="fas fa-desktop mr-1"></i> 7 · Monitor the event</h5>
+<div class="card shadow mb-4"><div class="card-body">
+  <ul class="mb-0">
+    <li><a href="/admin/live_dashboard"><strong>Live Answer Feed</strong></a> — real-time submissions plus advisory
+        integrity flags (shared answers, fast copies, burst solving).</li>
+    <li><a href="/admin/analytics"><strong>Analytics</strong></a> — solve rates, difficulty calibration, engagement,
+        and ADX ingestion health.</li>
+    <li><a href="/admin/audit_log"><strong>Audit Log</strong></a> — append-only record of every privileged action.</li>
+  </ul>
+</div></div>
+
+<h5 class="text-gray-700 mb-2"><i class="fas fa-file-export mr-1"></i> 8 · Outputs &amp; resilience</h5>
+<div class="card shadow mb-4"><div class="card-body">
+  <ul class="mb-0">
+    <li><a href="/admin/export/scenario_pdf"><strong>Scenario PDF</strong></a> — a player packet or instructor
+        answer key, generated from the live game.</li>
+    <li><a href="/admin/game_guide"><strong>Game Guide &amp; Instructor Key</strong></a> — a Markdown brief and
+        answer key built from the current config.</li>
+    <li><a href="/admin/export_game"><strong>Export Game</strong></a> — archive final standings, solve stats, and
+        the solve log as JSON/CSV.</li>
+    <li><a href="/admin/backup"><strong>Backup &amp; Restore</strong></a> — download a full snapshot (configs + DB),
+        or restore one; a DB restore is staged and swapped in safely on the next restart.</li>
+  </ul>
+</div></div>
+
+<div class="card shadow mb-4 border-left-primary"><div class="card-body">
+  <strong><i class="fas fa-terminal mr-1"></i> Automation &amp; configuration</strong>
+  <p class="mb-1 mt-2">For reproducible / CI runs, the headless CLI drives the same pipeline without the web
+     server: <code>python kc7_cli.py validate | preview | generate</code> (use <code>--no-azure</code> for a
+     full offline dry-run).</p>
+  <p class="mb-0 text-muted small">Optional behaviors (dynamic scoring, live-push scoreboard, campaign mode,
+     infrastructure reuse, per-technique alerts, indicator penalties, real-intel safety toggles) are feature
+     flags in <code>config.py</code> — all off by default. See the README's "Feature flags" table.</p>
+</div></div>
+
+{% endblock %}

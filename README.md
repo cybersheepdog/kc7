@@ -92,6 +92,26 @@ CLIENT_SECRET    = "your-client-secret"
 
 > GUI settings always take priority over `config.py` values.
 
+### Feature flags (`config.py`) 🆕
+
+Optional behaviors are gated behind flags in `config.py`. **Every one is off / zero by default**, and the code treats a missing flag as off — so leaving them alone preserves the original behavior. They're defined in the `ProductionConfig` class; to enable one, set it there (or in `BaseConfig` to apply to every config). `ADX_DEBUG_MODE` is the exception — it's `True` in `DevelopmentConfig` so a dev run prints data instead of writing to Azure.
+
+| Flag | What it enables | Default |
+|---|---|---|
+| `ADX_DEBUG_MODE` | Print generated data instead of uploading to ADX | `True` in dev, off otherwise |
+| `DYNAMIC_SCORING_ENABLED` | CTFd-style value decay as more teams solve (`DYNAMIC_SCORING_MINIMUM` / `DYNAMIC_SCORING_DECAY`) + first-blood bonus (`FIRST_BLOOD_BONUS_PCT`) | off |
+| `MITIGATION_WRONG_PENALTY` | Deduct points per wrong indicator (reconcilable) | `0` |
+| `MITIGATION_RATE_LIMIT_SECONDS` | Throttle rapid indicator resubmissions | `0` |
+| `LEADERBOARD_CACHE_SECONDS` | Cache the computed leaderboard for N seconds | `2` |
+| `LIVE_SCORE_SSE_ENABLED` | Push live scoreboard updates over SSE (`LIVE_SCORE_SSE_POLL_SECONDS` / `_MAX_SECONDS`); falls back to polling | off |
+| `GAME_SCHEDULER_ENABLED` | Background scheduler for auto game start/stop (`GAME_SCHEDULER_INTERVAL_SECONDS`) | off |
+| `CAMPAIGN_MODE_ENABLED` | Thread post-compromise stages through one pinned host + C2 per actor | off |
+| `INFRA_REUSE_ENABLED` | Draw each actor's IPs from stable "owned" ranges (`INFRA_REUSE_PREFIX_COUNT`) | off |
+| `TECHNIQUE_ALERTS_ENABLED` | Per-technique EDR `SecurityAlerts` with realistic detection rates | off |
+| `ALLOW_REAL_INDICATORS` / `ALLOW_REAL_C2_INFRASTRUCTURE` | Real-intel safety toggles — keep off unless IOCs are confirmed inert | off |
+
+> The `KC7_DISABLE_CONTENT_PACK` environment variable (any value) makes the generator ignore the realism content pack and use the built-in defaults.
+
 ---
 
 ## 🎮 Game Features
@@ -132,7 +152,7 @@ The badge **catalog lives in code** (`app/server/modules/badges/badges.py`); onl
 Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
 
 #### Leaderboard
-The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams, Players, and **Progress** tabs. Rankings are sorted by score with tie-breaking by earliest score time, and the live Teams/Players views now show **rank-movement deltas** (▲/▼ since the last update, "NEW" on first appearance). The board refreshes itself automatically: by default it polls every 10 seconds, and a pulsing **LIVE** badge shows it's updating. For near-real-time **push** updates (so a whole room sees movement the instant a score lands), enable `LIVE_SCORE_SSE_ENABLED` 🆕 in `config.py` — the page then streams updates over Server-Sent Events (`/score_stream`) and automatically falls back to polling if the stream is unavailable. (SSE needs a threaded/multi-worker server such as gunicorn or `flask run` with threading.)
+The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams, Players, and **Progress** tabs. Rankings are sorted by score with tie-breaking by earliest score time, and the live Teams/Players views now show **rank-movement deltas** (▲/▼ since the last update, "NEW" on first appearance). The board refreshes itself automatically: by default it polls every 10 seconds, and a pulsing **LIVE** badge shows it's updating. For near-real-time **push** updates (so a whole room sees movement the instant a score lands), enable `LIVE_SCORE_SSE_ENABLED` 🆕 in `config.py` — the page then streams updates over Server-Sent Events (`/score_stream`) and automatically falls back to polling if the stream is unavailable. (SSE needs a threaded/multi-worker server such as gunicorn or `flask run` with threading.) Each player row also shows a 🆕 **badge-count chip** that links to that player's badge showcase (`/u/<name>/badges`).
 
 The **Progress** tab 🆕 adds richer analytics drawn from the solve log (`/score_breakdown`): a **score-over-time** line chart per team (cumulative score by minutes since the first solve), a **progress-by-category** table showing how many challenges each team has cracked in each category (Attribution, Command & Control, Malware, MITRE ATT&CK, …), and a **first-blood** banner calling out who drew first blood and on which challenge.
 
@@ -278,8 +298,12 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 
 #### Audit Log (`/admin/audit_log`) 🆕
 - An append-only record of privileged admin actions, for accountability when multiple staff run an event.
-- Captures **who** did **what**, to which **target**, with detail, IP, and timestamp — across game start/stop/restart, user create/edit (including role and team changes), scenario config save/delete, intel-pack import, and challenge generate/delete.
+- Captures **who** did **what**, to which **target**, with detail, IP, and timestamp — across game start/stop/restart, user create/edit (including role and team changes), scenario config save/delete, intel-pack import, challenge generate/delete/regrade, score adjustments, badge grant/revoke, and backup download/restore.
 - Read-only view, newest-first, with a category filter (game / user / config / challenge). Logging is best-effort and never blocks the action it records.
+
+#### Badges (`/admin/badges`) 🆕
+- See every player's badge count, and grant or revoke the **discretionary** badges (MVP, Good sportsmanship, Team player) by hand — the rest are earned automatically as players solve challenges and find indicators.
+- Each grant/revoke is written to the Audit Log. Player names link to their public badge showcase. See **Achievement badges** under *For Players* for the full catalog.
 
 #### Facilitator roles: Observer & Grader (`/admin/users`) 🆕
 Besides **Admin** and **Player**, you can grant two narrower roles from Manage Users, so you can give event staff exactly the access they need and nothing more:
@@ -288,6 +312,8 @@ Besides **Admin** and **Player**, you can grant two narrower roles from Manage U
 - **Grader** — everything an Observer can see, plus the grading actions: regrade a challenge, adjust a score, and the answer tester. Still cannot touch game/scenario/config control or backups.
 
 Admin keeps full access exactly as before, and Players remain locked out of all admin routes — the new roles only *add* a middle tier (implemented by widening just those specific routes to `roles_accepted`). Roles are never assigned automatically; an Admin grants them. Observer/Grader users get a dedicated **Facilitator** sidebar menu showing only their permitted pages.
+
+**In-app role guides** 🆕 — each non-player role has a built-in guide that covers only what's specific to that role, linked from the top of its sidebar menu: Admin (`/guide/admin`), Observer (`/guide/observer`), and Grader (`/guide/grader`).
 
 #### Backup & Restore (`/admin/backup`) 🆕
 - **Download** a single `.zip` snapshot of the whole instance — every scenario config (actors, malware, company profile, content/intel packs, gameplay) plus a copy of the database (users, teams, challenges, scores, solves). Use it for disaster recovery or to migrate the game to another host.
@@ -328,6 +354,8 @@ Available techniques, grouped by kill-chain phase, with their MITRE ATT&CK mappi
 | Defense Evasion | `evasion:log_clearing` 🆕 | T1070.001 | Security/System event-log clearing (Event ID 1102 / 104) |
 | Persistence | `persistence:scheduled_task` 🆕 | T1053.005 | `schtasks.exe` scheduled-task persistence |
 | | `persistence:registry_run` 🆕 | T1547.001 | `Run` / `RunOnce` registry persistence |
+| Collection | `hands_on_keyboard:operator` 🆕 | T1059 | Interactive operator post-exploitation commands run via C2 |
+| Exfiltration | `exfiltration:email_collection` 🆕 | T1114.002 | Stolen-credential mailbox access + bulk mail download |
 | Cloud | `cloud:session_hijacking` 🆕 | T1539 | Impossible-travel session/token replay |
 | | `cloud:token_theft` 🆕 | T1528 | Alias of session hijacking (token replay) |
 | | `cloud:exfiltration_via_storage` 🆕 | T1530 | Public storage bucket + mass object reads |
@@ -362,12 +390,21 @@ Validation is dependency-free and additive: valid configs behave exactly as befo
 | `challenges` | Q&A challenges (global or round-scoped) |
 | `solves` | First-solve records with points awarded |
 | `answer_attempts` | Every challenge submission (correct and incorrect) |
+| `mitigation_awards` | Per-indicator award records (source of truth for indicator points) |
+| `score_adjustments` 🆕 | Manual +/- score changes and penalties (reconcilable by the Score Audit) |
+| `challenge_gating` 🆕 | Optional per-challenge hint, timed unlock, and prerequisite rules |
+| `hint_reveals` 🆕 | Records that a player revealed a hint (so the cost is charged once) |
+| `user_badges` 🆕 | Achievement badges a player has earned (catalog lives in code) |
+| `scheduled_game` 🆕 | Auto start/stop times for unattended events |
+| `game_run_logs` 🆕 | History of each data-generation run (timing, status, per-table row counts) |
+| `admin_audit` 🆕 | Append-only log of privileged admin actions |
 | `game_rounds` | Named password-protected game sessions |
 | `participations` | Player ↔ round membership |
 | `malicious_indicators` | Admin-seeded indicators for scoring |
 | `adx_config` | GUI-managed ADX connection settings |
 
 > These are the application's own SQLite tables. The simulated security logs that **players query in KQL** are separate and live in Azure Data Explorer — see below.
+> New side-tables auto-create on startup via `db.create_all` (no migration), and new columns on existing tables are added by an idempotent `_run_db_migrations()` — so upgrading an existing database is seamless.
 
 ---
 

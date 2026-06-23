@@ -54,6 +54,8 @@
       </a>
       <div id="collapseAdmin" class="collapse" aria-labelledby="headingPages" data-parent="#accordionSidebar">
         <div class="bg-white py-2 collapse-inner rounded">
+          <a class="collapse-item font-weight-bold" href="/guide/admin"><i class="fas fa-book-open fa-sm mr-1"></i>Admin Guide</a>
+          <div class="dropdown-divider"></div>
           <a class="collapse-item" href="/admin/manage_game">Manage the Game</a>
           <a class="collapse-item" href="/admin/manage_scenario">Manage Scenario</a>
           <a class="collapse-item" href="/admin/teams">Manage Teams</a>
@@ -82,6 +84,12 @@
       </a>
       <div id="collapseFacilitator" class="collapse" aria-labelledby="headingFacilitator" data-parent="#accordionSidebar">
         <div class="bg-white py-2 collapse-inner rounded">
+          {% if current_user.has_role('Grader') %}
+          <a class="collapse-item font-weight-bold" href="/guide/grader"><i class="fas fa-book-open fa-sm mr-1"></i>Grader Guide</a>
+          {% else %}
+          <a class="collapse-item font-weight-bold" href="/guide/observer"><i class="fas fa-book-open fa-sm mr-1"></i>Observer Guide</a>
+          {% endif %}
+          <div class="dropdown-divider"></div>
           <a class="collapse-item" href="/admin/analytics">Analytics</a>
           <a class="collapse-item" href="/admin/live_dashboard">Live Answer Feed</a>
           <a class="collapse-item" href="/admin/run_history">Run History</a>

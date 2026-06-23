@@ -1,0 +1,71 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-user-check mr-2 text-warning"></i>Grader Guide</h1>
+  <span class="badge badge-warning p-2">Grading + monitoring</span>
+</div>
+
+<div class="alert alert-warning">
+  As a <strong>Grader</strong> you can do everything an Observer can (the monitoring views — Analytics,
+  Live Answer Feed, Run History, Audit Log; see the <a href="/guide/observer">Observer Guide</a>),
+  <strong>plus</strong> the grading tools below. You <strong>cannot</strong> start/stop the game, edit the
+  scenario or configuration, manage users/teams, or take backups. Your tools are in the
+  <strong>Facilitator</strong> menu in the sidebar. Every grading action is written to the Audit Log and is
+  reconcilable by the Score Audit, so nothing you do here is silent or unrecoverable.
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+    <i class="fas fa-vial mr-1"></i> Answer Tester &mdash; adjudicate before you act</h6></div>
+  <div class="card-body">
+    <p>Before crediting or rejecting a disputed submission, check how the grader actually scores it. Pick a
+       challenge (or paste accepted answers), enter the player's trial submission, and see whether it would
+       be marked <strong>correct or wrong</strong>, with a per-alternate breakdown of each accepted answer's
+       normalized form and which one matched.</p>
+    <p class="mb-2 text-muted small">It uses the exact same defang/normalization the live scoreboard uses,
+       so <code>hxxp://1[.]2[.]3[.]4/</code> correctly matches <code>1.2.3.4</code>. Use this first to settle
+       "but my answer was right!" disputes objectively.</p>
+    <a href="/admin/answer_tester" class="btn btn-sm btn-outline-primary">Open Answer Tester</a>
+  </div>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+    <i class="fas fa-redo mr-1"></i> Re-grade a challenge</h6></div>
+  <div class="card-body">
+    <p>When a challenge's accepted answers were too strict (a typo, a missing valid form) and have since been
+       fixed, re-grading retroactively credits players who submitted a now-correct answer <em>earlier</em>
+       but were marked wrong. The <strong>Re-grade</strong> button previews exactly who would be credited and
+       how many points before you apply it.</p>
+    <p class="mb-2 text-muted small">Each player is scored at their <em>original</em> attempt time, so an
+       early submission keeps its speed bonus. The change is audited and fully reconcilable by the Score Audit.</p>
+    <a href="/admin/regrade_challenge" class="btn btn-sm btn-outline-primary">Open Re-grade</a>
+  </div>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+    <i class="fas fa-sliders-h mr-1"></i> Adjust a score</h6></div>
+  <div class="card-body">
+    <p>Manually add or subtract points for a team or player, with a required reason — for awarding a bonus,
+       applying a penalty, or correcting a mistake. Use a negative number to subtract.</p>
+    <p class="mb-2 text-muted small">Each adjustment is written to the Audit Log and folded into the Score
+       Audit's rebuild, so the running totals stay reconcilable. Prefer <em>Re-grade</em> when the issue is a
+       challenge that should have accepted an answer; use an adjustment for one-off corrections and bonuses.</p>
+    <a href="/admin/score_adjust" class="btn btn-sm btn-outline-primary">Open Adjust Score</a>
+  </div>
+</div>
+
+<div class="card shadow mb-4 border-left-warning">
+  <div class="card-body">
+    <strong>Good grading habits:</strong>
+    <ul class="mb-0 mt-2">
+      <li>Confirm with the <strong>Answer Tester</strong> before crediting a disputed answer.</li>
+      <li>Reach for <strong>Re-grade</strong> (not a manual adjustment) when a whole challenge was mis-graded — it credits everyone affected, at the right time.</li>
+      <li>Always write a clear <strong>reason</strong> on adjustments; it shows up in the Audit Log.</li>
+    </ul>
+  </div>
+</div>
+
+{% endblock %}

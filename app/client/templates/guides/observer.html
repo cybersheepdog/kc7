@@ -1,0 +1,79 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-binoculars mr-2 text-info"></i>Observer Guide</h1>
+  <span class="badge badge-info p-2">Read-only monitoring</span>
+</div>
+
+<div class="alert alert-info">
+  As an <strong>Observer</strong> you have <strong>read-only</strong> access to the monitoring views below —
+  perfect for watching how an event is going without the ability to change anything. You
+  <strong>cannot</strong> start/stop the game, edit the scenario or configuration, manage users or teams,
+  grade or adjust scores, or take backups. Your pages live in the <strong>Facilitator</strong> menu in the
+  sidebar.
+</div>
+
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+        <i class="fas fa-chart-line mr-1"></i> Analytics</h6></div>
+      <div class="card-body">
+        <p>A facilitator's-eye view of the event: solve rates by challenge and category, difficulty
+           calibration (which challenges are too easy/hard), engagement over time, and ADX ingestion
+           health. Use it to gauge pacing and spot challenges nobody can crack.</p>
+        <a href="/admin/analytics" class="btn btn-sm btn-outline-primary">Open Analytics</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+        <i class="fas fa-stream mr-1"></i> Live Answer Feed</h6></div>
+      <div class="card-body">
+        <p>A near-real-time stream of every submission (correct and incorrect) as players work, with an
+           <strong>integrity flags</strong> panel that surfaces possible shared answers, fast copies, or
+           burst solving. These flags are <em>advisory only</em> — they never penalize anyone automatically.</p>
+        <a href="/admin/live_dashboard" class="btn btn-sm btn-outline-primary">Open Live Answer Feed</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+        <i class="fas fa-history mr-1"></i> Run History</h6></div>
+      <div class="card-body">
+        <p>A log of each data-generation run: when it started and finished, how long it took, whether it
+           succeeded / errored / was cancelled, the scenario window, and per-table ingested-row counts.
+           Handy for confirming the data players are querying actually generated.</p>
+        <a href="/admin/run_history" class="btn btn-sm btn-outline-primary">Open Run History</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+        <i class="fas fa-clipboard-list mr-1"></i> Audit Log</h6></div>
+      <div class="card-body">
+        <p>An append-only record of privileged admin actions — who did what, to which target, with a
+           timestamp — filterable by category. Use it to understand what facilitators have changed during
+           the event.</p>
+        <a href="/admin/audit_log" class="btn btn-sm btn-outline-primary">Open Audit Log</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">During an event — what to watch</h6></div>
+  <div class="card-body">
+    <ul class="mb-0">
+      <li>Use <strong>Analytics</strong> to catch a challenge with a 0% solve rate early — it may be mis-worded.</li>
+      <li>Keep the <strong>Live Answer Feed</strong> open to feel the room's momentum and notice integrity flags.</li>
+      <li>If players report "no data," check <strong>Run History</strong> for a failed or cancelled run.</li>
+    </ul>
+  </div>
+</div>
+
+{% endblock %}

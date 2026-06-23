@@ -2323,6 +2323,30 @@ def admin_revoke_badge():
     return redirect(url_for("main.admin_badges"))
 
 
+# ---------------------------------------------------------------------------
+# In-app role guides (each covers only what is specific to that role).
+# ---------------------------------------------------------------------------
+@main.route("/guide/admin")
+@roles_accepted("Admin")
+@login_required
+def guide_admin():
+    return render_template("guides/admin.html")
+
+
+@main.route("/guide/observer")
+@roles_accepted("Admin", "Observer", "Grader")
+@login_required
+def guide_observer():
+    return render_template("guides/observer.html")
+
+
+@main.route("/guide/grader")
+@roles_accepted("Admin", "Grader")
+@login_required
+def guide_grader():
+    return render_template("guides/grader.html")
+
+
 @main.route("/admin/game_guide")
 @roles_required("Admin")
 @login_required
