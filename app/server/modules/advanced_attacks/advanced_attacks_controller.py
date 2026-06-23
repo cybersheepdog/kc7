@@ -85,7 +85,10 @@ def build_campaign(actor):
         c2_ip = ip_list[idx2]
     else:
         c2_ip = fake.ipv4_public()
-    return {"host": host, "c2_ip": c2_ip, "session_id": str(uuid.uuid4()), "clock": None}
+    # Deterministic session id (per actor) so the SAME stolen session recurs across every
+    # day of the campaign — a stable identifier a hunter can pivot on (#7), not a new uuid daily.
+    session_id = str(uuid.UUID(hashlib.md5((actor.name + "session").encode("utf-8")).hexdigest()))
+    return {"host": host, "c2_ip": c2_ip, "session_id": session_id, "clock": None}
 
 
 def init_campaign_clock(actor, start_date):
@@ -175,6 +178,30 @@ def _actor_ip(actor: Actor) -> str:
         return ips[0]
     # Fall back to a public IP if the actor has no infrastructure yet
     return fake.ipv4_public()
+
+
+def _session_id(actor: Actor = None) -> str:
+    """
+    The campaign's stable session id when a campaign is active, else a fresh one (#7).
+    Threading one session id across the cloud sign-in events makes the stolen session a
+    recurring identifier a hunter can pivot on, instead of a new uuid per event.
+    """
+    camp = _ACTIVE_CAMPAIGN
+    if camp is not None and camp.get("session_id"):
+        return camp["session_id"]
+    return str(uuid.uuid4())
+
+
+def _jitter(seconds: int, pct: float = 0.4) -> int:
+    """
+    Add +/-``pct`` random jitter to an interval (#8). Real C2 beacons and operator actions
+    don't fire on a fixed clock — a little jitter makes the spacing look human/automated
+    rather than perfectly periodic. Never returns less than 1 second.
+    """
+    if seconds <= 0:
+        return max(1, seconds)
+    delta = int(seconds * pct)
+    return max(1, seconds + random.randint(-delta, delta))
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +448,7 @@ def actor_cloud_session_hijacking(actor: Actor, start_date: date) -> None:
     different country.
     """
     user = _targeted_employees(actor, count=1)[0]
-    session_id = str(uuid.uuid4())
+    session_id = _session_id(actor)   # campaign-stable when active (#7)
     home_city, home_country = random.choice(HOME_LOCATIONS)
     away_city, away_country = random.choice(IMPOSSIBLE_TRAVEL_LOCATIONS)
     actor_ip = _actor_ip(actor)
@@ -488,7 +515,7 @@ def actor_cloud_exfil_via_storage(actor: Actor, start_date: date) -> None:
             src_ip=actor_ip,
             city=away_city,
             country=away_country,
-            session_id=str(uuid.uuid4()),
+            session_id=_session_id(actor),   # campaign-stable when active (#7)
             result="Success",
             user_agent=fake.firefox()
         ),
@@ -531,7 +558,9 @@ def actor_cloud_exfil_via_storage(actor: Actor, start_date: date) -> None:
             ),
             table_name="CloudStorageLogs"
         )
-        read_time = Clock.increment_time(read_time, random.randint(1, 30))
+        # Low-and-slow exfil (#8): space the object reads out (tens of seconds to a few
+        # minutes, jittered) rather than a tight burst, so it blends into normal traffic.
+        read_time = Clock.increment_time(read_time, _jitter(random.randint(30, 180)))
 
     # A bucket flipped public + mass reads is loud — high-signal alert (#15)
     generate_technique_alert(time=read_time, attack="cloud:exfiltration_via_storage",
@@ -623,8 +652,9 @@ def actor_hands_on_keyboard(actor: Actor, start_date: date) -> None:
             process=Process(process_name=process_name, process_commandline=commandline),
             username=host.username
         )
-        # the operator types commands a few seconds to a couple of minutes apart
-        time = Clock.increment_time(time, random.randint(5, 120))
+        # the operator types commands a few seconds to a couple of minutes apart, jittered
+        # so the C2 cadence looks human rather than perfectly periodic (#8)
+        time = Clock.increment_time(time, _jitter(random.randint(5, 120)))
 
     # Living-off-the-land operator commands are fairly quiet (#15)
     generate_technique_alert(time=time, attack="hands_on_keyboard:operator",

@@ -133,6 +133,14 @@ also emit as an answer key or narrate in a guide.
    hostname/username/src_ip/session_id actually resolves across `ProcessEvents`,
    `SecurityEvents`, `AuthenticationEvents`, and the cloud logs. Stable, recurring
    per-campaign C2 infra reads far more like a real actor than fresh-random values.
+   *Status: ✅ Done (in campaign mode). The campaign model (#6) already pins ONE compromised
+   host and C2 IP across the post-compromise stages, so host/username/src_ip already thread
+   through `ProcessEvents`/`SecurityEvents`/`AuthenticationEvents`. This adds the missing
+   **session_id**: `build_campaign` now derives a **deterministic** session id per actor
+   (like the C2 IP), and a `_session_id()` helper threads it through the cloud sign-in
+   generators — so the same stolen session recurs across the cloud logs (and across every
+   day of the campaign) as a stable identifier a hunter can pivot on, instead of a fresh
+   uuid per event. Campaign-gated; with campaign mode off, behavior is unchanged.*
 
 8. **Event-driven behavioral timing (dwell & beacon jitter).** Move from rigid
    sequential waves toward an event-driven model where each stage fires a *staggered
@@ -146,6 +154,11 @@ also emit as an answer key or narrate in a guide.
    a randomized in-working-hours dwell after every stage (`advance_campaign_clock`), so
    the kill chain unfolds in order over time instead of all stages picking a random hour.
    Remaining: beacon jitter, low-and-slow exfil pacing, and explicit weekend/holiday gaps.*
+   *Update: ✅ **beacon jitter and low-and-slow exfil shipped.** A `_jitter()` helper adds
+   ±40% randomness so cadences look human/automated rather than perfectly periodic; it's
+   applied to the hands-on-keyboard operator command spacing, and the cloud storage exfil
+   now spaces its object reads out (tens of seconds to a few minutes, jittered) instead of
+   a tight burst. Weekend gaps are already enforced by the working-days/working-hours clock.*
 
 9. **Map every attack to MITRE ATT&CK.** Store the technique ID on each attack
    (T1558.003 Kerberoasting, T1021.002 SMB/admin-share lateral movement, T1070.001
@@ -156,6 +169,14 @@ also emit as an answer key or narrate in a guide.
 10. **Richer benign baseline.** Deepen the default actor's noise — realistic
     parent/child process trees, varied user-agents tied to OS, proxy/DNS chatter —
     so malicious activity has to be hunted out of believable background.
+    *Status: ✅ Done (process trees). The benign baseline previously emitted single processes
+    with random parents; `gen_benign_process_trees` now emits **coherent parent→child trees**
+    on normal hosts — a root spawned by its real OS parent (e.g. `explorer.exe → chrome.exe →
+    chrome.exe ×3`, `services.exe → svchost.exe → taskhostw/RuntimeBroker/sihost`), the
+    children sharing one parent name + hash — so malicious chains (PsExec service installs,
+    recon bursts, hands-on-keyboard) now have believable cover to be hunted out of. Wired into
+    the default-actor daily generation. (Varied OS-tied user-agents and richer proxy/DNS
+    chatter remain as smaller future add-ons; benign DNS/browsing already generate today.)*
 
 ---
 
@@ -470,6 +491,16 @@ score recompute (#20), anti-cheat surfacing (#26).
 
 29. **Scheduled game start/stop.** Auto-launch or end a game at a set time (fits the
     existing scheduled-task support) for unattended events.
+    *Status: ✅ Done. New `ScheduledGame` singleton holds optional auto-start / auto-stop
+    times (each arms independently and fires once). A lightweight **opt-in** scheduler
+    (`modules/scheduler/game_scheduler.py`, gated by `GAME_SCHEDULER_ENABLED`, default off
+    → no thread runs and behavior is unchanged) wakes on an interval and fires due actions:
+    auto-start spawns the same background generation the manual Start button uses (skipped
+    if a game is already running); auto-stop ends the game and closes scoring (sets the
+    session end-time). The firing decision is a pure, unit-tested `due_actions(sched, now,
+    game_running)`. Admins arm it on `/admin/schedule_game` (linked from Manage Game,
+    audited #37); the page warns when the scheduler is disabled. Best for single-process
+    deployments — for multi-worker, an external cron is recommended (noted in config).*
 
 ### Scoreboard operations
 
@@ -484,12 +515,25 @@ score recompute (#20), anti-cheat surfacing (#26).
     unchanged) — user adjustments fold into the player's recomputed total (and their team via
     aggregation), team adjustments add to the team total — so `?apply=1` rebuilds **preserve**
     manual corrections instead of wiping them. Verified the integration math and backward
-    compatibility. (Note: hint-cost deductions from #32 are a separate ledger and are not
-    restored by the destructive rebuild — consistent with the module's existing caveats.)*
+    compatibility. **Hint-cost deductions (#32) are folded in too**: the score audit adds
+    each `HintReveal` cost as a negative user adjustment, and `reveal_hint` applies the raw
+    deduction (no floor), so the live score and the rebuild stay exactly consistent and a
+    recompute no longer erases hint costs.*
 
 31. **Edit accepted answers + re-grade.** Let an admin fix a challenge's accepted answers
     and re-grade past `AnswerAttempt`s so early submissions aren't unfairly marked wrong.
     Pairs with answer normalization (#21).
+    *Status: ✅ Done. Editing a challenge's answers already existed; this adds the **re-grade**.
+    A pure `modules/scoring/regrade.py` (`find_regrade_candidates`) scans the `AnswerAttempt`
+    log for every player who has no solve yet but submitted a now-accepted answer, returning
+    each one's **earliest** now-correct attempt (matched through the same `answer_matches`
+    normalizer the scoreboard uses). `/admin/regrade_challenge` (a "Re-grade" button per
+    challenge on Manage Challenges) **previews** exactly who'd be credited and the points,
+    then on apply creates a `Solve` for each — scored **at their original attempt time** so an
+    early-but-wrongly-rejected answer keeps its speed bonus (a small additive `at=` param on
+    `calculate_time_weighted_points`). Credits the player and their team, updates the tie-break
+    times to match the rebuild, and is audited (#37). Because the points live in
+    `Solve.points_awarded`, the re-grade is fully reconcilable by the Score Audit (#20).*
 
 ### Challenge tooling
 
@@ -502,7 +546,8 @@ score recompute (#20), anti-cheat surfacing (#26).
     challenge with **no gating row is never locked and has no hint**, so behavior is
     unchanged unless an admin configures it. `submit_answer` enforces the lock before
     accepting an answer; a new `/reveal_hint` charges the cost once (off the player and
-    their team, floored at zero) and returns the text. The player Challenges page shows a
+    their team; the raw deduction is folded into the score-audit rebuild via #30 so a
+    recompute preserves it) and returns the text. The player Challenges page shows a
     lock badge + reason and a "Reveal hint (−N pts)" button; admins configure it on a new
     `/admin/challenge_gating` page (per-challenge hint/cost/unlock/prerequisite, with
     "clear all to remove"), audited (#37) and linked from Manage Challenges.*
@@ -749,9 +794,9 @@ Risk is the chance of disturbing existing behavior.
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
 | 6 | Kill-chain / campaign model | L | Medium | ✅ **Done** (opt-in) — pins one host + C2 across post-compromise stages, which now unfold in order with dwell; initial-access threading + DB persistence are future polish |
-| 7 | Cross-table identity consistency | M | Medium | Stable per-campaign infra & entities |
-| 8 | Event-driven behavioral timing (dwell & jitter) | S–M | Low | 🚧 stage dwell shipped — campaign clock advances an in-working-hours dwell between stages so the kill chain unfolds in order; beacon jitter / low-and-slow exfil pending |
-| 10 | Richer benign baseline | M | Low | Deepen default-actor noise/process trees |
+| 7 | Cross-table identity consistency | M | Medium | ✅ Done (campaign mode) — pinned host/IP across tables + deterministic recurring session_id threaded into cloud logs |
+| 8 | Event-driven behavioral timing (dwell & jitter) | S–M | Low | ✅ Done — stage dwell (campaign clock) + `_jitter()` beacon/operator jitter + low-and-slow cloud exfil pacing; weekend gaps via working-days clock |
+| 10 | Richer benign baseline | M | Low | ✅ Done — `gen_benign_process_trees` emits coherent parent→child trees on normal hosts so malicious chains have cover (OS-tied UAs / richer DNS are future polish) |
 | 15 | Per-technique detection fidelity | S–M | Low | ✅ Done — opt-in `TECHNIQUE_ALERTS_ENABLED`; per-technique `DETECTION_PROFILES` (rate+severity), gated EDR alerts wired into all 9 advanced generators (loud vs. deliberately-quiet) |
 
 ### Phase 4 — Authoring experience
@@ -795,10 +840,10 @@ Risk is the chance of disturbing existing behavior.
 | 30 | Manual score adjustments | S | Low | ✅ Done — `/admin/score_adjust` (+/- team/player, reason, audited); folded into score-audit rebuild so `?apply=1` preserves them |
 | 33 | Answer tester | S | Very low | ✅ **Done** — author UI at `/admin/answer_tester` (picker + verdict + per-alternate breakdown) over the existing `/admin/test_answer` `explain_match` API |
 | 28 | Generation run console & history | M | Low | ✅ **Done** — run history + per-table row counts, streamed progress log, and Stop-to-cancel mid-run |
-| 31 | Edit answers + re-grade | M | Low | Re-grade `AnswerAttempt`; pairs with #21 |
+| 31 | Edit answers + re-grade | M | Low | ✅ Done — `/admin/regrade_challenge` previews + credits players whose earlier answer is now accepted; scored at attempt time, audited, reconcilable |
 | 34 | Facilitator analytics dashboard | M | Low | ✅ Done — `/admin/analytics`: solve rates by challenge/category, difficulty calibration, engagement, ADX ingestion health |
 | 32 | Hints & challenge gating | M | Low | ✅ Done — side-tables (no migration): point-cost hints, timed unlocks, prerequisite chains; `/admin/challenge_gating` config; enforced in `submit_answer` |
-| 29 | Scheduled game start/stop | S | Low | Uses scheduling support |
+| 29 | Scheduled game start/stop | S | Low | ✅ Done — opt-in scheduler (`GAME_SCHEDULER_ENABLED`); `/admin/schedule_game` arms auto-start generation / auto-stop scoring; pure `due_actions` tested |
 | 36 | Reset / archive / export game | M | Medium | ✅ Done — reset existed; read-only `/admin/export_game` (JSON/CSV) snapshots standings + solve stats + solve log for records/archive |
 | 35 | Multiple concurrent scenarios | L | Medium | Removes single-company/session assumption |
 

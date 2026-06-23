@@ -102,6 +102,11 @@
                             data-round-id="{{ ch.round_id or '' }}">
                       <i class="fas fa-edit mr-1"></i> Edit
                     </button>
+                    <a href="/admin/regrade_challenge?challenge_id={{ ch.id }}"
+                       class="btn btn-sm btn-outline-info btn-block mb-1"
+                       title="Credit players who answered correctly before an answer fix">
+                      <i class="fas fa-redo mr-1"></i> Re-grade
+                    </a>
                     <form action="/admin/delete_challenge" method="post">
                       <input type="hidden" name="challenge_id" value="{{ ch.id }}">
                       <button type="submit" class="btn btn-danger btn-sm btn-block"

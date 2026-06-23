@@ -139,6 +139,16 @@ with app.app_context():
     _run_db_migrations()
     _seed_db()
 
+# Optional background scheduler for unattended game start/stop (#29). Opt-in via
+# GAME_SCHEDULER_ENABLED (default off → no thread runs); acts only on schedules an admin
+# explicitly arms. Guarded so a failure here can't block app startup.
+if app.config.get("GAME_SCHEDULER_ENABLED"):
+    try:
+        from app.server.modules.scheduler.game_scheduler import start_scheduler
+        start_scheduler(app, interval=int(app.config.get("GAME_SCHEDULER_INTERVAL_SECONDS", 30)))
+    except Exception as _e:
+        print("game scheduler not started:", _e)
+
 
 # Jinja2 custom filters
 @app.template_filter('format_number')

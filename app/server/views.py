@@ -13,7 +13,7 @@ from sqlalchemy import asc
 from sqlalchemy.sql.expression import func, select
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
-from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment
+from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame
 from app.server.modules.audit.audit_log import record_admin_action
 from app.server.modules.organization.Company import Company, Employee
 from app.server.modules.clock.Clock import Clock
@@ -32,12 +32,14 @@ POINTS_PER_INDICATOR = 100       # base score per correct new malicious indicato
 TIME_BONUS_WINDOW_HOURS = 24.0   # over this many real hours the speed bonus decays to zero
 
 
-def calculate_time_weighted_points(base_points, game_session):
+def calculate_time_weighted_points(base_points, game_session, at=None):
     """
     Returns base_points plus a speed bonus that decays linearly over
     TIME_BONUS_WINDOW_HOURS of real-world time since the game started.
     At t=0:  2x base_points (full bonus).
     At t=24h: 1x base_points (no bonus).
+    ``at`` (default now) is the moment scoring is evaluated — re-grade (#31) passes the
+    original attempt time so a retroactively-credited early submission keeps its bonus.
     """
     try:
         if not game_session or not game_session.start_time:
@@ -49,7 +51,7 @@ def calculate_time_weighted_points(base_points, game_session):
             game_start = raw
         else:
             return base_points
-        elapsed_hours = (datetime.now() - game_start).total_seconds() / 3600.0
+        elapsed_hours = ((at or datetime.now()) - game_start).total_seconds() / 3600.0
         decay = max(0.0, 1.0 - elapsed_hours / TIME_BONUS_WINDOW_HOURS)
         return base_points + int(base_points * decay)
     except Exception as e:
@@ -1231,10 +1233,11 @@ def reveal_hint():
             charged = int(gate.hint_cost or 0)
             if charged:
                 # cost comes off both the player and their team, mirroring how a solve
-                # adds to both (floored at zero so a hint can't push a score negative).
-                current_user.score = max(0, (current_user.score or 0) - charged)
+                # adds to both. Raw (no floor) so the live score stays exactly consistent
+                # with the score-audit rebuild, which subtracts the recorded hint cost.
+                current_user.score = (current_user.score or 0) - charged
                 if current_user.team:
-                    current_user.team.score = max(0, (current_user.team.score or 0) - charged)
+                    current_user.team.score = (current_user.team.score or 0) - charged
             db.session.add(HintReveal(challenge_id=challenge_id, user_id=current_user.id, cost=charged))
             db.session.commit()
 
@@ -1323,6 +1326,79 @@ def edit_challenge():
         print("edit_challenge error: " + str(e))
         flash("Failed to update challenge: " + str(e), "error")
     return redirect(url_for("main.manage_challenges"))
+
+
+@main.route("/admin/regrade_challenge", methods=["GET", "POST"])
+@roles_required("Admin")
+@login_required
+def regrade_challenge():
+    """
+    Re-grade a challenge against its (possibly just-edited) accepted answers (#31): find
+    players who submitted a now-correct answer but were marked wrong and never credited,
+    and retroactively award them — crediting points at their original attempt time so an
+    early-but-wrongly-rejected answer keeps its speed bonus. GET previews; POST applies.
+    """
+    from app.server.modules.scoring.answer_matching import answer_matches
+    from app.server.modules.scoring.regrade import find_regrade_candidates
+
+    try:
+        cid = int(request.values.get("challenge_id"))
+    except (TypeError, ValueError):
+        flash("Invalid challenge.", "danger")
+        return redirect(url_for("main.manage_challenges"))
+    ch = db.session.get(Challenge, cid)
+    if not ch:
+        flash("Challenge not found.", "danger")
+        return redirect(url_for("main.manage_challenges"))
+
+    solved_ids = {s.user_id for s in Solve.query.filter_by(challenge_id=cid).all()}
+    players = {u.id: u for u in Users.query.filter(Users.team_id != 1).all()}
+    attempts = [{"user_id": a.user_id,
+                 "username": players[a.user_id].username if a.user_id in players else None,
+                 "submitted": a.submitted, "attempted_at": a.attempted_at}
+                for a in AnswerAttempt.query.filter_by(challenge_id=cid).all()
+                if a.user_id in players]
+    candidates = find_regrade_candidates(attempts, solved_ids, ch.answer, answer_matches)
+
+    # points each would receive, time-weighted at their original attempt time
+    rnd = db.session.get(GameRound, ch.round_id) if ch.round_id else None
+    gs = db.session.get(GameSession, 1)
+    for c in candidates:
+        at = c["attempted_at"]
+        if rnd:
+            c["points"] = calculate_round_time_weighted_points(ch.value, rnd, solved_at=at)
+        else:
+            c["points"] = calculate_time_weighted_points(ch.value, gs, at=at)
+
+    if request.method == "GET":
+        return render_template("admin/regrade_preview.html", challenge=ch, candidates=candidates)
+
+    # POST — apply
+    def _maxtime(a, b):
+        return b if a is None else (a if b is None else max(a, b))
+
+    credited = 0
+    for c in candidates:
+        u = players.get(c["user_id"])
+        if not u:
+            continue
+        pts = c["points"]
+        solve = Solve(challenge_id=cid, user_id=u.id, points_awarded=pts)
+        solve.solved_at = c["attempted_at"] or solve.solved_at   # credit at the attempt time
+        db.session.add(solve)
+        _attempt_time = c["attempted_at"]
+        u.score = (u.score or 0) + pts
+        u.last_score_time = _maxtime(u.last_score_time, _attempt_time)
+        if u.team:
+            u.team.score = (u.team.score or 0) + pts
+            u.team.last_score_time = _maxtime(u.team.last_score_time, _attempt_time)
+        credited += 1
+    db.session.commit()
+    record_admin_action("challenge.regrade", target=ch.name,
+                        detail="credited %d player(s)" % credited)
+    flash("Re-graded '%s': credited %d player(s)." % (ch.name, credited), "success")
+    return redirect(url_for("main.manage_challenges"))
+
 
 @main.route("/admin/delete_challenge", methods=["POST"])
 @roles_required("Admin")
@@ -2088,6 +2164,50 @@ def export_game():
                     headers={"Content-Disposition": "attachment; filename=kc7_game_export_%s.json" % ts})
 
 
+@main.route("/admin/schedule_game", methods=["GET", "POST"])
+@roles_required("Admin")
+@login_required
+def schedule_game():
+    """Set an unattended schedule to auto-start generation and/or auto-stop scoring (#29)."""
+    sched = db.session.get(ScheduledGame, 1)
+    if not sched:
+        sched = ScheduledGame()
+        db.session.add(sched)
+        db.session.commit()
+
+    if request.method == "POST":
+        def _parse(field):
+            v = (request.form.get(field) or "").strip()
+            if not v:
+                return None
+            try:
+                return datetime.fromisoformat(v)
+            except ValueError:
+                return None
+
+        new_start = _parse("start_at")
+        new_stop = _parse("stop_at")
+        start_enabled = request.form.get("start_enabled") in ("1", "on", "true", "yes")
+        stop_enabled = request.form.get("stop_enabled") in ("1", "on", "true", "yes")
+
+        # changing a time or (re)enabling a leg re-arms it so it can fire again
+        if new_start != sched.start_at or (start_enabled and not sched.start_enabled):
+            sched.start_fired_at = None
+        if new_stop != sched.stop_at or (stop_enabled and not sched.stop_enabled):
+            sched.stop_fired_at = None
+
+        sched.start_at, sched.start_enabled = new_start, start_enabled
+        sched.stop_at, sched.stop_enabled = new_stop, stop_enabled
+        db.session.commit()
+        record_admin_action("game.schedule",
+                            detail="start=%s(%s) stop=%s(%s)" % (new_start, start_enabled, new_stop, stop_enabled))
+        flash("Schedule saved.", "success")
+        return redirect(url_for("main.schedule_game"))
+
+    return render_template("admin/schedule_game.html", sched=sched,
+                           scheduler_on=bool(current_app.config.get("GAME_SCHEDULER_ENABLED")))
+
+
 @main.route("/admin/preview_scenario")
 @roles_required("Admin")
 @login_required
@@ -2166,7 +2286,14 @@ def score_audit():
     teams = Team.query.filter(Team.id != 1).all()
     solves = Solve.query.all()
     awards = MitigationAward.query.all()
-    adjustments = ScoreAdjustment.query.all()   # manual corrections (#30) fold into the rebuild
+    # Manual corrections (#30) and hint-cost deductions (#32) both fold into the rebuild as
+    # adjustments, so an ?apply=1 recompute preserves them. Hint costs are negative deltas
+    # on the revealing user (which propagate to their team via aggregation).
+    from types import SimpleNamespace as _NS
+    adjustments = list(ScoreAdjustment.query.all())
+    for _h in HintReveal.query.all():
+        if _h.cost:
+            adjustments.append(_NS(target_type="user", target_id=_h.user_id, delta=-int(_h.cost)))
 
     if request.args.get("apply") == "1":
         target = compute_rebuild(users, teams, solves, awards, adjustments)

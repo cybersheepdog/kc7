@@ -1,0 +1,73 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-clock mr-2 text-primary"></i>Schedule Game
+  </h1>
+  <a href="/admin/manage_game" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-gamepad mr-1"></i> Manage Game
+  </a>
+</div>
+
+{% if not scheduler_on %}
+<div class="alert alert-warning">
+  <i class="fas fa-exclamation-triangle mr-1"></i>
+  The background scheduler is <b>off</b>, so these times won't fire. Set
+  <code>GAME_SCHEDULER_ENABLED = True</code> in <code>config.py</code> and restart to enable
+  unattended start/stop. (You can still save a schedule now.)
+</div>
+{% else %}
+<div class="alert alert-success py-2">
+  <i class="fas fa-check mr-1"></i> The scheduler is active — armed times below will fire automatically.
+</div>
+{% endif %}
+
+<p class="text-muted">
+  Auto-<b>start</b> launches data generation; auto-<b>stop</b> ends the game and closes
+  scoring. Each leg fires once; changing a time or re-enabling it re-arms it.
+</p>
+
+<form method="post" action="/admin/schedule_game">
+  <div class="row">
+    <div class="col-md-6">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Auto-start generation</h6></div>
+        <div class="card-body">
+          <div class="form-check mb-2">
+            <input type="checkbox" class="form-check-input" id="start_enabled" name="start_enabled" value="1"
+                   {{ 'checked' if sched.start_enabled else '' }}>
+            <label class="form-check-label font-weight-bold" for="start_enabled">Enable auto-start</label>
+          </div>
+          <input type="datetime-local" name="start_at" class="form-control"
+                 value="{{ sched.start_at.strftime('%Y-%m-%dT%H:%M') if sched.start_at else '' }}">
+          <small class="text-muted">
+            {% if sched.start_fired_at %}Fired at {{ sched.start_fired_at.strftime('%Y-%m-%d %H:%M') }}.
+            {% else %}Not yet fired.{% endif %}
+          </small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Auto-stop (close scoring)</h6></div>
+        <div class="card-body">
+          <div class="form-check mb-2">
+            <input type="checkbox" class="form-check-input" id="stop_enabled" name="stop_enabled" value="1"
+                   {{ 'checked' if sched.stop_enabled else '' }}>
+            <label class="form-check-label font-weight-bold" for="stop_enabled">Enable auto-stop</label>
+          </div>
+          <input type="datetime-local" name="stop_at" class="form-control"
+                 value="{{ sched.stop_at.strftime('%Y-%m-%dT%H:%M') if sched.stop_at else '' }}">
+          <small class="text-muted">
+            {% if sched.stop_fired_at %}Fired at {{ sched.stop_fired_at.strftime('%Y-%m-%d %H:%M') }}.
+            {% else %}Not yet fired.{% endif %}
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
+  <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> Save schedule</button>
+</form>
+
+{% endblock %}

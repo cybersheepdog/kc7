@@ -33,7 +33,7 @@ from app.server.modules.outbound_browsing.browsing_controller import browse_rand
 from app.server.modules.inbound_browsing.inbound_browsing_controller import gen_inbound_browsing_activity
 from app.server.modules.authentication.auth_controller import auth_random_user_to_mail_server, actor_password_spray
 from app.server.modules.helpers.config_helper import read_config_from_yaml
-from app.server.modules.endpoints.endpoint_controller import gen_system_files_on_host, gen_user_files_on_host, gen_system_processes_on_host
+from app.server.modules.endpoints.endpoint_controller import gen_system_files_on_host, gen_user_files_on_host, gen_system_processes_on_host, gen_benign_process_trees
 from app.server.modules.advanced_attacks.advanced_attacks_controller import (
     actor_kerberoasting,
     actor_psexec_lateral,
@@ -473,11 +473,18 @@ def generate_activity_new(actor: Actor,
                                                 percent_employees_to_generate=percent_employees_to_generate_activity_daily,
                                                 count_of_events_per_user=count_of_user_endpoint_events)
             
-            gen_system_processes_on_host        (start_date=current_date, 
-                                                start_hour=actor.activity_start_hour, 
-                                                workday_length_hours=actor.workday_length_hours, 
+            gen_system_processes_on_host        (start_date=current_date,
+                                                start_hour=actor.activity_start_hour,
+                                                workday_length_hours=actor.workday_length_hours,
                                                 percent_employees_to_generate=count_of_system_endpoint_events)
-            
+
+            # Coherent benign parent->child process trees so malicious chains have cover (#10)
+            gen_benign_process_trees            (start_date=current_date,
+                                                start_hour=actor.activity_start_hour,
+                                                workday_length_hours=actor.workday_length_hours,
+                                                percent_employees_to_generate=count_of_system_endpoint_events,
+                                                trees_per_user=1)
+
             return
     
     # Generate activity for malicious actors

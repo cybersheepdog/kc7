@@ -128,6 +128,55 @@ def gen_system_processes_on_host(start_date: date, start_hour: int, workday_leng
     
     
 
+# Realistic benign parent->child process trees (#10). Each entry is
+# (grandparent, root, [children]) — the root is spawned by its real OS parent, then the
+# children are spawned by the root, forming a coherent tree rather than a flat list of
+# processes with random parents. This deepens the benign baseline so malicious process
+# chains (PsExec service installs, recon bursts, hands-on-keyboard) have believable cover.
+BENIGN_PROCESS_TREES = [
+    ("userinit.exe", "explorer.exe", ["chrome.exe", "outlook.exe", "Teams.exe", "OneDrive.exe"]),
+    ("explorer.exe", "chrome.exe", ["chrome.exe", "chrome.exe", "chrome.exe"]),
+    ("explorer.exe", "OUTLOOK.EXE", ["WINWORD.EXE", "EXCEL.EXE"]),
+    ("services.exe", "svchost.exe", ["taskhostw.exe", "RuntimeBroker.exe", "sihost.exe"]),
+    ("explorer.exe", "Teams.exe", ["Teams.exe", "Teams.exe"]),
+    ("winlogon.exe", "userinit.exe", ["explorer.exe"]),
+    ("explorer.exe", "WINWORD.EXE", ["splwow64.exe"]),
+    ("services.exe", "spoolsv.exe", ["splwow64.exe"]),
+    ("explorer.exe", "powershell.exe", ["conhost.exe"]),
+]
+
+
+def gen_benign_process_trees(start_date: date, start_hour: int, workday_length_hours: int,
+                             percent_employees_to_generate: float, trees_per_user: int = 1) -> None:
+    """
+    Emit coherent benign parent->child process trees on normal hosts (#10): a root process
+    spawned by its real OS parent, then a handful of child processes whose parent is that
+    root (same name + hash), clustered within a few seconds — believable background that
+    malicious chains must be hunted out of.
+    """
+    total = get_company().count_employees
+    employees = get_employees(count=int(total * percent_employees_to_generate))
+    for employee in employees:
+        for _ in range(max(1, trees_per_user)):
+            grandparent, root, children = random.choice(BENIGN_PROCESS_TREES)
+            gp_hash = File.get_random_sha256()
+            root_hash = File.get_random_sha256()
+            base = Clock.generate_bimodal_timestamp(start_date, start_hour, workday_length_hours).timestamp()
+            # root spawned by its OS parent
+            upload_endpoint_event_to_azure(ProcessEvent(
+                timestamp=base, parent_process_name=grandparent, parent_process_hash=gp_hash,
+                process_commandline=root, process_name=root,
+                hostname=employee.hostname, username=employee.username), table_name="ProcessEvents")
+            # children spawned by the root: same parent name + hash => a real tree
+            t = base
+            for child in children:
+                t = Clock.increment_time(t, random.randint(1, 8))
+                upload_endpoint_event_to_azure(ProcessEvent(
+                    timestamp=t, parent_process_name=root, parent_process_hash=root_hash,
+                    process_commandline=child, process_name=child,
+                    hostname=employee.hostname, username=employee.username), table_name="ProcessEvents")
+
+
 def get_legit_system_process(username: str = None, filename: str = None) -> Process:
     """
     Build a legitimate process and return it

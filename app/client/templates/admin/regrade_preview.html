@@ -1,0 +1,65 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-redo mr-2 text-primary"></i>Re-grade Challenge
+  </h1>
+  <a href="/admin/manage_challenges" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-tasks mr-1"></i> Manage Challenges
+  </a>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-body">
+    <h6 class="font-weight-bold mb-1">{{ challenge.name }}
+      <span class="text-muted">· {{ challenge.category }} · {{ challenge.value }} pts</span></h6>
+    <div class="small text-muted">Accepted answer(s): <code>{{ challenge.answer }}</code></div>
+  </div>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+    Players to credit <span class="badge badge-primary">{{ candidates|length }}</span>
+  </h6></div>
+  <div class="card-body">
+    <p class="text-muted small">
+      These players submitted a now-accepted answer before the fix but were never credited.
+      Applying creates a solve for each, scored at their original attempt time (so an early
+      submission keeps its speed bonus), and updates the standings. This is recorded in the
+      Audit Log and folds into the Score Audit.
+    </p>
+
+    {% if candidates %}
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered">
+        <thead class="thead-light"><tr><th>Player</th><th>Submitted</th><th>When</th><th class="text-right">Points</th></tr></thead>
+        <tbody>
+          {% for c in candidates %}
+          <tr>
+            <td class="font-weight-bold">{{ c.username }}</td>
+            <td><code>{{ c.submitted }}</code></td>
+            <td class="small text-muted">{{ c.attempted_at.strftime('%Y-%m-%d %H:%M') if c.attempted_at else '—' }}</td>
+            <td class="text-right font-weight-bold">+{{ c.points }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <form method="post" action="/admin/regrade_challenge"
+          onsubmit="return confirm('Credit {{ candidates|length }} player(s) for this challenge?');">
+      <input type="hidden" name="challenge_id" value="{{ challenge.id }}">
+      <button type="submit" class="btn btn-success">
+        <i class="fas fa-check mr-1"></i> Apply — credit {{ candidates|length }} player(s)
+      </button>
+      <a href="/admin/manage_challenges" class="btn btn-outline-secondary ml-2">Cancel</a>
+    </form>
+    {% else %}
+    <div class="alert alert-secondary mb-0">
+      No uncredited players have a now-correct submission — nothing to re-grade.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

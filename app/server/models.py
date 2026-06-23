@@ -396,6 +396,27 @@ class ScoreAdjustment(AuthBase):
         }
 
 
+class ScheduledGame(AuthBase):
+    """
+    Singleton (id=1) holding an optional schedule to auto-start data generation and/or
+    auto-stop scoring at set times, for unattended events (#29). Only acts when the
+    scheduler is enabled (config flag) AND the relevant leg is enabled here; ``*_fired_at``
+    ensures each fires once.
+    """
+    __tablename__ = "scheduled_game"
+
+    start_at       = db.Column(db.DateTime, nullable=True)
+    start_enabled  = db.Column(db.Boolean, nullable=False, default=False)
+    start_fired_at = db.Column(db.DateTime, nullable=True)
+    stop_at        = db.Column(db.DateTime, nullable=True)
+    stop_enabled   = db.Column(db.Boolean, nullable=False, default=False)
+    stop_fired_at  = db.Column(db.DateTime, nullable=True)
+
+    def __init__(self):
+        self.start_enabled = False
+        self.stop_enabled = False
+
+
 class GameRunLog(AuthBase):
     """
     A record of each data-generation run, for facilitator observability — when a game

@@ -131,6 +131,14 @@ class ProductionConfig(BaseConfig):
     # connections collapse to one DB read per window (#27). Set 0 to disable caching.
     LEADERBOARD_CACHE_SECONDS = 2
 
+    # --- Scheduled game start/stop (off by default) — #29 ---
+    # When enabled, a background scheduler auto-launches data generation and/or auto-stops
+    # scoring at the times an admin sets on /admin/schedule_game (for unattended events).
+    # Off by default: no scheduler thread runs and behavior is unchanged. Best for a
+    # single-process deployment; for multi-worker setups prefer an external cron.
+    GAME_SCHEDULER_ENABLED = False
+    GAME_SCHEDULER_INTERVAL_SECONDS = 30
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7
