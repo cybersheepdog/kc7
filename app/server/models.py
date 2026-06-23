@@ -618,6 +618,33 @@ class MaliciousIndicator(AuthBase):
         return '<MaliciousIndicator %r type=%r>' % (self.value, self.itype)
 
 
+class DecoyIndicator(AuthBase):
+    """
+    Admin-seeded benign-but-suspicious indicators — red herrings (#51). These LOOK like
+    they belong on a deny list but are known-good: a legitimate partner mail server, a
+    dual-use admin tool's hash, a sinkholed IP, a popular CDN domain, etc. When a player
+    flags one, scoring recognizes it as a decoy and returns the benign ``reason`` so the
+    player learns to discriminate real IOCs from noise — instead of a generic "wrong".
+    Side-table: auto-creates with db.create_all, and an empty table means no decoys (the
+    original behavior, unchanged).
+    """
+    __tablename__ = "decoy_indicators"
+
+    value    = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    itype    = db.Column(db.String(20),  nullable=False)   # 'domain' | 'ip' | 'email' | 'hash'
+    reason   = db.Column(db.String(300), nullable=True)    # why it's benign (shown to the player)
+    added_at = db.Column(db.DateTime,    nullable=False)
+
+    def __init__(self, value, itype, reason=None):
+        self.value    = value.strip().lower()
+        self.itype    = itype.strip().lower()
+        self.reason   = (reason or "").strip() or None
+        self.added_at = datetime.datetime.now()
+
+    def __repr__(self):
+        return '<DecoyIndicator %r type=%r>' % (self.value, self.itype)
+
+
 class UserBadge(AuthBase):
     """
     Records that a user earned an achievement badge. The badge CATALOG lives in code
@@ -645,6 +672,87 @@ class UserBadge(AuthBase):
 
     def __repr__(self):
         return '<UserBadge user=%r slug=%r>' % (self.user_id, self.slug)
+
+
+class NotebookEntry(AuthBase):
+    """
+    A player's private investigation notebook (#48). A per-player scratchpad for jotting
+    findings, pasting IOCs, and building a timeline while pivoting through the data.
+    Entirely personal and additive — it has NO effect on scoring or anyone else's view.
+    Side-table: auto-creates with db.create_all, no migration.
+
+    ``kind`` is one of: 'note' (free text), 'ioc' (an indicator; ``tag`` holds its
+    auto-detected type), or 'event' (a timeline entry; ``tag`` holds the event time text).
+    """
+    __tablename__ = "notebook_entries"
+
+    user_id    = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False, index=True)
+    kind       = db.Column(db.String(20), nullable=False, default="note")
+    content    = db.Column(db.Text, nullable=False)
+    tag        = db.Column(db.String(160), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, user_id, kind, content, tag=None):
+        self.user_id    = user_id
+        self.kind       = (kind or "note")
+        self.content    = content
+        self.tag        = tag
+        self.created_at = datetime.datetime.now()
+
+    def to_dict(self):
+        return {
+            "id":         self.id,
+            "kind":       self.kind,
+            "content":    self.content,
+            "tag":        self.tag,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+    def __repr__(self):
+        return '<NotebookEntry user=%r kind=%r>' % (self.user_id, self.kind)
+
+
+class GameEvent(AuthBase):
+    """
+    A notable in-game moment for the live event ticker (#54): a first blood, a badge
+    unlock, or a rank-up. Recorded best-effort as it happens; the ticker reads recent
+    rows and formats them according to a facilitator 'reveal level' so challenge/category
+    names (which would spoil the investigation) are only shown when explicitly allowed.
+    Side-table — auto-creates, never affects scoring.
+    """
+    __tablename__ = "game_events"
+
+    kind           = db.Column(db.String(20), nullable=False)   # first_blood | badge | rankup
+    username       = db.Column(db.String(50), nullable=True)
+    team_name      = db.Column(db.String(50), nullable=True)
+    # spoiler-bearing fields — only surfaced at the right reveal level:
+    challenge_name = db.Column(db.String(120), nullable=True)
+    category       = db.Column(db.String(60), nullable=True)
+    challenge_id   = db.Column(db.Integer, nullable=True)
+    # always-safe payload (badge name, rank title):
+    detail         = db.Column(db.String(160), nullable=True)
+    round_id       = db.Column(db.Integer, nullable=True)
+    created_at     = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, kind, username=None, team_name=None, challenge_name=None,
+                 category=None, challenge_id=None, detail=None, round_id=None):
+        self.kind           = kind
+        self.username       = username
+        self.team_name      = team_name
+        self.challenge_name = challenge_name
+        self.category       = category
+        self.challenge_id   = challenge_id
+        self.detail         = detail
+        self.round_id       = round_id
+        self.created_at     = datetime.datetime.now()
+
+    def to_dict(self):
+        return {
+            "kind": self.kind, "username": self.username, "team_name": self.team_name,
+            "challenge_name": self.challenge_name, "category": self.category,
+            "challenge_id": self.challenge_id, "detail": self.detail,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 ##########################################################

@@ -145,6 +145,23 @@ class ProductionConfig(BaseConfig):
     MITIGATION_WRONG_PENALTY = 0          # points deducted per WRONG new indicator
     MITIGATION_RATE_LIMIT_SECONDS = 0     # min seconds between a player's submissions
 
+    # --- Red-herring / decoy indicators (#51) ---
+    # Admin-seeded known-benign indicators (Manage Indicators) are recognized when a player
+    # flags them, and the player is shown WHY they're benign. This is an OPTIONAL extra
+    # penalty per decoy flagged, on top of any MITIGATION_WRONG_PENALTY. 0 = decoys are
+    # still recognized + explained, just with no extra point cost.
+    MITIGATION_DECOY_PENALTY = 0
+
+    # --- Live event ticker (#54) ---
+    # A scoreboard feed of notable moments (first blood, badges, rank-ups). Because naming
+    # a challenge/category spoils which TTPs are in play, a 'reveal level' controls what's
+    # shown. Default 'standings' is spoiler-safe (badges, rank-ups, generic "first blood!"
+    # with no names). Other values: 'off', 'category' (names the category), 'full' (names
+    # the challenge). FIRSTBLOOD_AFTER_N withholds a challenge/category name until that many
+    # teams have solved it (0 = reveal immediately at category/full level).
+    EVENT_TICKER_REVEAL = "standings"        # off | standings | category | full
+    EVENT_TICKER_FIRSTBLOOD_AFTER_N = 0
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7

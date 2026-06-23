@@ -1,0 +1,136 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<style>
+  .nb-col .card-body { max-height: 62vh; overflow-y: auto; }
+  .nb-entry { border:1px solid #e3e6f0; border-radius:.35rem; padding:.45rem .6rem; margin-bottom:.5rem; background:#fff; position:relative; }
+  .nb-entry .nb-del { position:absolute; top:.25rem; right:.45rem; color:#c7cad6; cursor:pointer; font-size:1rem; line-height:1; }
+  .nb-entry .nb-del:hover { color:#e74a3b; }
+  .nb-note { white-space:pre-wrap; word-break:break-word; padding-right:.8rem; }
+  .nb-ioc-val { font-family:monospace; word-break:break-all; }
+  .nb-time { font-family:monospace; font-size:.78rem; color:#4e73df; }
+  .nb-empty { color:#b7b9cc; font-size:.85rem; }
+</style>
+
+<div class="d-sm-flex align-items-center justify-content-between mb-2">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-book mr-2 text-primary"></i>Investigation Notebook</h1>
+  <button id="nb-clear" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash mr-1"></i> Clear all</button>
+</div>
+<p class="text-muted small mb-3">Your private scratchpad — jot findings, stash indicators as you pivot, and build a timeline of the intrusion. Only you can see this, and it doesn't affect your score.</p>
+
+<div class="row">
+  <div class="col-lg-4 nb-col">
+    <div class="card shadow mb-4">
+      <div class="card-header py-2"><h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-sticky-note mr-1"></i> Notes</h6></div>
+      <div class="card-body">
+        <form id="nb-note-form" class="mb-3">
+          <textarea class="form-control form-control-sm mb-2" id="nb-note-input" rows="2" placeholder="Jot a finding…"></textarea>
+          <button class="btn btn-sm btn-primary btn-block" type="submit"><i class="fas fa-plus mr-1"></i> Add note</button>
+        </form>
+        <div id="nb-notes"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4 nb-col">
+    <div class="card shadow mb-4">
+      <div class="card-header py-2"><h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-fingerprint mr-1"></i> Indicators</h6></div>
+      <div class="card-body">
+        <form id="nb-ioc-form" class="mb-3">
+          <input class="form-control form-control-sm mb-2" id="nb-ioc-input" placeholder="Paste a domain, IP, hash, email…">
+          <button class="btn btn-sm btn-primary btn-block" type="submit"><i class="fas fa-plus mr-1"></i> Add indicator</button>
+        </form>
+        <div id="nb-iocs"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4 nb-col">
+    <div class="card shadow mb-4">
+      <div class="card-header py-2"><h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-clock mr-1"></i> Timeline</h6></div>
+      <div class="card-body">
+        <form id="nb-event-form" class="mb-3">
+          <input class="form-control form-control-sm mb-2" id="nb-event-time" placeholder="When (e.g. 2023-03-07T14:05Z)">
+          <input class="form-control form-control-sm mb-2" id="nb-event-desc" placeholder="What happened…">
+          <button class="btn btn-sm btn-primary btn-block" type="submit"><i class="fas fa-plus mr-1"></i> Add event</button>
+        </form>
+        <div id="nb-events"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var NB_ENTRIES = {{ entries|tojson }};
+  function iocBadgeClass(t){ return {domain:'badge-info', ip:'badge-primary', email:'badge-secondary', hash:'badge-dark'}[t] || 'badge-light'; }
+
+  function buildEntry(e){
+    var wrap = $('<div class="nb-entry">').attr('data-id', e.id);
+    if (e.kind === 'ioc') {
+      var t = e.tag || 'ioc';
+      wrap.append($('<span class="badge mr-1">').addClass(iocBadgeClass(t)).text(t));
+      wrap.append($('<span class="nb-ioc-val">').text(e.content));
+      wrap.append($('<i class="far fa-copy ml-2 text-muted" style="cursor:pointer" title="Copy">').on('click', function(){
+        if (navigator.clipboard) navigator.clipboard.writeText(e.content);
+        if (window.toastr) toastr.info('Copied');
+      }));
+    } else if (e.kind === 'event') {
+      if (e.tag) wrap.append($('<div class="nb-time">').text(e.tag));
+      wrap.append($('<div class="nb-note">').text(e.content));
+    } else {
+      wrap.append($('<div class="nb-note">').text(e.content));
+    }
+    wrap.append($('<span class="nb-del" title="Delete">&times;</span>').on('click', function(){ deleteEntry(e.id, wrap); }));
+    return wrap;
+  }
+
+  function listFor(kind){ return kind==='ioc' ? $('#nb-iocs') : kind==='event' ? $('#nb-events') : $('#nb-notes'); }
+
+  function refreshEmpty(){
+    [['#nb-notes','No notes yet.'],['#nb-iocs','No indicators saved.'],['#nb-events','No events yet.']].forEach(function(p){
+      var $l=$(p[0]);
+      $l.children('.nb-empty').remove();
+      if ($l.children('.nb-entry').length===0) $l.append($('<div class="nb-empty">').text(p[1]));
+    });
+  }
+
+  function insertEventSorted(node, entry){
+    var $list=$('#nb-events'), placed=false;
+    $list.children('.nb-entry').each(function(){
+      if ((entry.tag||'') < $(this).find('.nb-time').text()){ $(this).before(node); placed=true; return false; }
+    });
+    if(!placed) $list.append(node);
+  }
+
+  function addEntry(kind, content, timeTag){
+    var data={kind:kind, content:content};
+    if (kind==='event') data.tag = timeTag || '';
+    $.post('/notebook/add', data, function(r){
+      if(!r.ok){ if(window.toastr) toastr.warning(r.message||'Could not add.'); return; }
+      var $list=listFor(kind); $list.children('.nb-empty').remove();
+      var node=buildEntry(r.entry);
+      if (kind==='event') insertEventSorted(node, r.entry); else $list.prepend(node);
+    }).fail(function(){ if(window.toastr) toastr.error('Network error.'); });
+  }
+
+  function deleteEntry(id, node){
+    $.post('/notebook/delete', {id:id}, function(r){ if(r.ok){ node.remove(); refreshEmpty(); } });
+  }
+
+  $(function(){
+    var notes = NB_ENTRIES.filter(function(e){return e.kind==='note';}).reverse();
+    var iocs  = NB_ENTRIES.filter(function(e){return e.kind==='ioc';}).reverse();
+    var events= NB_ENTRIES.filter(function(e){return e.kind==='event';}).sort(function(a,b){return (a.tag||'')<(b.tag||'')?-1:1;});
+    notes.forEach(function(e){ $('#nb-notes').append(buildEntry(e)); });
+    iocs.forEach(function(e){ $('#nb-iocs').append(buildEntry(e)); });
+    events.forEach(function(e){ $('#nb-events').append(buildEntry(e)); });
+    refreshEmpty();
+
+    $('#nb-note-form').on('submit', function(ev){ ev.preventDefault(); var v=$('#nb-note-input').val().trim(); if(v){ addEntry('note',v); $('#nb-note-input').val(''); } });
+    $('#nb-ioc-form').on('submit', function(ev){ ev.preventDefault(); var v=$('#nb-ioc-input').val().trim(); if(v){ addEntry('ioc',v); $('#nb-ioc-input').val(''); } });
+    $('#nb-event-form').on('submit', function(ev){ ev.preventDefault(); var d=$('#nb-event-desc').val().trim(), t=$('#nb-event-time').val().trim(); if(d){ addEntry('event',d,t); $('#nb-event-desc').val(''); $('#nb-event-time').val(''); } });
+    $('#nb-clear').on('click', function(){ if(confirm('Clear your entire notebook? This cannot be undone.')){ $.post('/notebook/clear', {}, function(r){ if(r.ok){ $('#nb-notes,#nb-iocs,#nb-events').empty(); refreshEmpty(); } }); } });
+  });
+</script>
+
+{% endblock %}

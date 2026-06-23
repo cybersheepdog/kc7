@@ -89,6 +89,77 @@
     </div>
   </div>
 
+  <!-- Decoy (red-herring) indicators -->
+  <div class="card shadow mb-4 border-left-warning">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+      <h6 class="m-0 font-weight-bold text-warning"><i class="fas fa-mask mr-1"></i> Decoy (red-herring) Indicators</h6>
+      <span class="badge badge-warning badge-pill">{{ decoys|length }}</span>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small">
+        Known-<strong>benign</strong> but suspicious-looking indicators. When a player flags one, the game tells
+        them it's a decoy and shows the reason below — training them to discriminate real IOCs from noise.
+        Decoys count as wrong answers; set <code>MITIGATION_DECOY_PENALTY</code> in <code>config.py</code> for an
+        optional extra point cost. Examples: a legitimate partner mail server, a sinkholed IP, a dual-use admin
+        tool's hash, a popular CDN domain.
+      </p>
+
+      <form action="/admin/add_decoy" method="post" class="form-row align-items-end mb-3">
+        <div class="form-group col-md-4 mb-2">
+          <label class="small font-weight-bold">Value <span class="text-danger">*</span></label>
+          <input type="text" class="form-control form-control-sm" name="value"
+                 placeholder="e.g. partner-mail.com / 8.8.8.8" autocomplete="off" spellcheck="false" required>
+        </div>
+        <div class="form-group col-md-2 mb-2">
+          <label class="small font-weight-bold">Type</label>
+          <select class="form-control form-control-sm" name="itype">
+            <option value="auto">Auto-detect</option>
+            <option value="domain">Domain</option>
+            <option value="ip">IP Address</option>
+            <option value="email">Email</option>
+            <option value="hash">Hash</option>
+          </select>
+        </div>
+        <div class="form-group col-md-4 mb-2">
+          <label class="small font-weight-bold">Why it's benign (shown to player)</label>
+          <input type="text" class="form-control form-control-sm" name="reason"
+                 placeholder="e.g. Legitimate partner mail server" maxlength="300">
+        </div>
+        <div class="form-group col-md-2 mb-2">
+          <button type="submit" class="btn btn-sm btn-warning btn-block"><i class="fas fa-plus mr-1"></i> Add decoy</button>
+        </div>
+      </form>
+
+      {% if decoys %}
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover table-sm mb-0" width="100%">
+          <thead class="thead-light">
+            <tr><th style="width:6rem;">Type</th><th>Indicator</th><th>Why benign</th><th style="width:5rem;">Action</th></tr>
+          </thead>
+          <tbody>
+            {% set badge = {'domain': 'primary', 'ip': 'info', 'email': 'warning', 'hash': 'danger'} %}
+            {% for d in decoys %}
+            <tr>
+              <td><span class="badge badge-{{ badge.get(d.itype, 'secondary') }}">{{ d.itype }}</span></td>
+              <td><code>{{ d.value }}</code></td>
+              <td class="small text-muted">{{ d.reason or '—' }}</td>
+              <td>
+                <form action="/admin/delete_decoy" method="post">
+                  <input type="hidden" name="decoy_id" value="{{ d.id }}">
+                  <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Remove this decoy?')"><i class="fas fa-times"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted small mb-0">No decoys seeded. Add benign-but-suspicious indicators above to challenge players' discrimination.</p>
+      {% endif %}
+    </div>
+  </div>
+
   <div class="row">
 
     <!-- Single add + bulk paste -->

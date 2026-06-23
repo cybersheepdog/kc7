@@ -931,6 +931,46 @@ Risk is the chance of disturbing existing behavior.
 
 ---
 
+### Phase 9 — Player experience & immersion (independent track)
+
+Make a session feel like a real, escalating investigation rather than a quiz. These are
+**proposed** (not yet built); most are small and build directly on infrastructure already
+in place (badges, the SSE leaderboard, ATT&CK tags on challenges, answer normalization,
+`report_url`, false-positive alerts).
+
+**Immersion & realism**
+
+| # | Item | Effort | Risk | Notes |
+|---|------|--------|------|-------|
+| 48 | Investigation notebook / case file | M | Low | ✅ Done — `/notebook`: per-player three-pane scratchpad (Notes / Indicators / Timeline) with AJAX add/delete/clear; IOC type auto-detected (reuses `classify_indicator`) with a copy button; timeline sorts by event time. `NotebookEntry` side-table (auto-creates), every route scoped to `current_user`, zero scoring impact |
+| 49 | Incident briefing + chapter narrative | S | Low | 🆕 Proposed — open with a CISO "we've been breached" memo, drop story beats as the kill chain unfolds; leverages the game-guide generator (#12) |
+| 50 | Threat-intel report reading | S | Low | 🆕 Proposed — surface a readable intel report per actor for attribution; builds on actor `report_url` (#45) |
+| 51 | Red-herring (decoy) indicators | M | Low–Med | ✅ Done — admin-seeded `DecoyIndicator` side-table (value + benign reason) on Manage Indicators; flagging a decoy returns a distinct "known-benign — here's why" message (teaches discrimination) instead of a generic "wrong". Optional extra `MITIGATION_DECOY_PENALTY` (default 0 → recognized + explained, no cost; reconcilable). Malicious always wins on conflict; empty table = original behavior |
+| 52 | Embedded KQL console | L | Medium | 🆕 Proposed — in-app, read-only query pane proxying to ADX so players investigate without leaving the app (SIEM-style). Biggest realism win, largest build |
+
+**Progression & social**
+
+| # | Item | Effort | Risk | Notes |
+|---|------|--------|------|-------|
+| 53 | Analyst rank titles (XP / levels) | S | Low | ✅ Done — pure `ranks.py` ladder (Recruit → Analyst I/II → … → Cyber Sentinel) from score; shown on the profile (title + progress bar to next rank) and under each name on the scoreboard (via `INDIVIDUAL.ranks`). Cosmetic only — never affects scoring/ordering |
+| 54 | Live player event ticker | S | Low | ✅ Done — `GameEvent` side-table + pure spoiler-aware `format_event`; ticker on the scoreboard + big-screen polls public `/event_feed`. Events: first blood, badge unlocks, rank-ups. **Reveal level** `EVENT_TICKER_REVEAL` = off / **standings (default, spoiler-safe)** / category / full, plus `EVENT_TICKER_FIRSTBLOOD_AFTER_N` to withhold a name until N solves. Verified the default leaks **zero** challenge/category names. Recording is best-effort (never affects scoring) |
+| 55 | Public player profile | S | Low | 🆕 Proposed — extend the badge showcase (`/u/<name>/badges`) into rank, solve timeline, category coverage, and badges |
+| 56 | Spectator / big-screen scoreboard | S | Low | ✅ Done — standalone full-screen `/scoreboard/big` (no sidebar/nav), Teams + Players top-10 with medals, rank titles, LIVE pulse + clock, auto-refresh polling the public `/get_score`. "Big screen" button on the leaderboard; kiosk-friendly (no login needed) |
+
+**Learning & onboarding**
+
+| # | Item | Effort | Risk | Notes |
+|---|------|--------|------|-------|
+| 57 | Post-solve ATT&CK explainer | S | Low | 🆕 Proposed — after a correct answer, show the technique + "what an analyst does next"; ATT&CK ids are already on challenges |
+| 58 | Smart wrong-answer nudges | S | Low | 🆕 Proposed — use `explain_match` / normalization to hint "close — try the defanged form / check casing" instead of a flat "wrong" |
+| 59 | Onboarding warm-up + KQL cheat sheet | S–M | Low | 🆕 Proposed — a guided first challenge teaching the query→submit loop, plus a per-table KQL pattern reference for beginners |
+
+> Suggested high-leverage starter set (mostly small, very visible): **#48 notebook**,
+> **#49 briefing/narrative**, **#57 post-solve explainer + #58 wrong-answer nudges**,
+> **#53 analyst ranks**, and **#54 live event ticker**.
+
+---
+
 ## Recommended starting point
 
 **Done:** the foundational, lowest-risk items — **config validation (#1)**, the
@@ -981,4 +1021,5 @@ compelling when they describe a single connected intrusion.
 #18–#27 Scoreboard & scoring ─► (independent track; #21 normalization → #20 recompute → #24/#25 live UX)
 #28–#38 Admin & operations ─► (independent track; #37 audit underpins #30; do #38 ops hardening first)
 #39–#46 Real-world intel & attribution ─► (#39 safety first → #40/#43 → #44 clustering[needs #6/#7] → #45 scoring)
+#48–#59 Player experience & immersion ─► (independent track; mostly small, build on badges/SSE/ATT&CK tags/normalization/report_url)
 ```

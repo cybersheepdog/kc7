@@ -94,7 +94,9 @@
     <li><a href="/admin/badges"><strong>Badges</strong></a> — most badges are earned automatically; here you grant
         or revoke the discretionary ones (MVP, Good sportsmanship, Team player). Audited.</li>
     <li><a href="/admin/manage_indicators"><strong>Malicious Indicators</strong></a> — seed indicators for scoring
-        when running against a pre-existing ADX dataset.</li>
+        when running against a pre-existing ADX dataset. The same page also manages
+        <strong>decoy (red-herring) indicators</strong> 🆕: benign-but-suspicious items with a reason, so flagging
+        one teaches the player it's benign instead of a generic "wrong".</li>
   </ul>
   <p class="text-muted small mb-0 mt-2">Note: if the seeded <code>admin</code> account still uses the default
      password, the app forces a password change before anything else can be done.</p>
@@ -108,6 +110,10 @@
     <li><a href="/admin/analytics"><strong>Analytics</strong></a> — solve rates, difficulty calibration, engagement,
         and ADX ingestion health.</li>
     <li><a href="/admin/audit_log"><strong>Audit Log</strong></a> — append-only record of every privileged action.</li>
+    <li><a href="/scoreboard/big" target="_blank"><strong>Big-screen scoreboard</strong></a> 🆕 — a full-screen
+        board for projecting at the event (also reachable from the "Big screen" button on the leaderboard).
+        It shows a <strong>live event ticker</strong> of first-bloods, badges, and rank-ups — see the spoiler
+        note in configuration below.</li>
   </ul>
 </div></div>
 
@@ -130,9 +136,14 @@
   <p class="mb-1 mt-2">For reproducible / CI runs, the headless CLI drives the same pipeline without the web
      server: <code>python kc7_cli.py validate | preview | generate</code> (use <code>--no-azure</code> for a
      full offline dry-run).</p>
-  <p class="mb-0 text-muted small">Optional behaviors (dynamic scoring, live-push scoreboard, campaign mode,
+  <p class="mb-1 text-muted small">Optional behaviors (dynamic scoring, live-push scoreboard, campaign mode,
      infrastructure reuse, per-technique alerts, indicator penalties, real-intel safety toggles) are feature
      flags in <code>config.py</code> — all off by default. See the README's "Feature flags" table.</p>
+  <p class="mb-0 text-muted small"><strong>Event-ticker spoilers:</strong> the live ticker's
+     <code>EVENT_TICKER_REVEAL</code> defaults to <code>standings</code> (spoiler-safe — badges, rank-ups, and a
+     generic "first blood!" with no names). Only raise it to <code>category</code> or <code>full</code> if
+     revealing which challenge/technique was solved is acceptable for your event (e.g. a same-scenario
+     competition), since in a discovery game that leaks which TTPs are in play.</p>
 </div></div>
 
 {% endblock %}

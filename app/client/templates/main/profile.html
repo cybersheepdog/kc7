@@ -12,6 +12,22 @@
         {% if target.team %}<i class="fas fa-users fa-sm mr-1"></i>{{ target.team.name }} &bull; {% endif %}
         {% for role in target.roles %}<span class="badge badge-{{ 'danger' if role.name == 'Admin' else 'secondary' }} mr-1">{{ role.name }}</span>{% endfor %}
       </small>
+      {% if rank_info %}
+      <div class="mt-2" style="max-width:340px;">
+        <span class="badge badge-primary p-2" style="font-size:.85rem;">
+          <i class="fas fa-user-shield mr-1"></i>{{ rank_info.title }}
+          <span class="text-white-50">&middot; Lvl {{ rank_info.level }}</span>
+        </span>
+        {% if rank_info.next_title %}
+        <div class="progress mt-2" style="height:6px;">
+          <div class="progress-bar bg-primary" role="progressbar" style="width: {{ rank_info.progress_pct }}%;"></div>
+        </div>
+        <small class="text-muted">{{ rank_info.to_next | format_number }} pts to <strong>{{ rank_info.next_title }}</strong></small>
+        {% else %}
+        <div class="mt-1"><small class="text-success"><i class="fas fa-crown mr-1"></i>Top rank reached</small></div>
+        {% endif %}
+      </div>
+      {% endif %}
     </div>
   </div>
 

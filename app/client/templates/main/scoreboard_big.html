@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KC7 — Live Scoreboard</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/kc7-mark.svg') }}">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: #16182a; color: #f4f6fb;
+      font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden; padding: 1.4vw 1.8vw; display: flex; flex-direction: column;
+    }
+    header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.2vh; }
+    header img { width: 3.4vw; height: 3.4vw; min-width: 38px; min-height: 38px; }
+    header .title { font-size: 2.4vw; font-weight: 700; letter-spacing: .5px; }
+    header .title .sub { color: #9aa4d4; font-weight: 400; }
+    header .live { margin-left: auto; display: flex; align-items: center; gap: .5rem; font-size: 1.2vw; color: #9be7f0; }
+    header .dot { width: .8vw; height: .8vw; min-width: 10px; min-height: 10px; border-radius: 50%; background: #3fc1b0; animation: pulse 1.6s infinite; }
+    header .clock { color: #6b7099; font-variant-numeric: tabular-nums; margin-left: 1.2rem; font-size: 1.2vw; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.25;} }
+
+    .panels { flex: 1; display: flex; gap: 1.8vw; min-height: 0; }
+    .panel { flex: 1; background: #1d2038; border-radius: 14px; padding: 1.4vh 1.4vw; display: flex; flex-direction: column; min-height: 0; }
+    .panel h2 { font-size: 1.5vw; font-weight: 700; color: #c7ccf5; margin-bottom: 1vh; display: flex; align-items: center; gap: .5rem; }
+    .panel h2 .pill { font-size: .9vw; background: #4e73df; color: #fff; border-radius: 999px; padding: .15em .7em; font-weight: 600; }
+    .rows { flex: 1; overflow: hidden; }
+    .row { display: flex; align-items: center; padding: .85vh .4vw; border-bottom: 1px solid #2a2e4d; gap: 1vw; }
+    .row .rk { width: 3vw; min-width: 36px; font-size: 1.7vw; font-weight: 700; color: #6b7099; text-align: center; }
+    .row .nm { flex: 1; font-size: 1.7vw; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row .nm .meta { display: block; font-size: .95vw; font-weight: 400; color: #8a90bf; }
+    .row .sc { font-size: 1.9vw; font-weight: 700; font-variant-numeric: tabular-nums; color: #9be7f0; }
+    .row.top1 .rk, .row.top1 .sc { color: #e0a528; }
+    .row.top2 .rk { color: #c3c8d8; } .row.top3 .rk { color: #cd7f32; }
+    .empty { color: #6b7099; font-size: 1.2vw; padding: 2vh .4vw; }
+    .medal { font-size: 1.6vw; }
+    .ticker { margin-top: 1.2vh; background: #1d2038; border-radius: 12px; padding: 1.1vh 1.4vw;
+              font-size: 1.25vw; color: #c7ccf5; white-space: nowrap; overflow: hidden;
+              display: flex; gap: 2.6vw; align-items: center; }
+    .ticker:empty { display: none; }
+    .ticker .ev { display: inline-flex; align-items: center; gap: .5rem; }
+    .ticker .ev.blood { color: #ff8a9b; } .ticker .ev.medal { color: #f0c651; } .ticker .ev.up { color: #7fe0c4; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="{{ url_for('static', filename='images/kc7-mark.svg') }}" alt="KC7">
+    <div class="title">KC7 <span class="sub">— Live Scoreboard</span></div>
+    <div class="live"><span class="dot"></span> LIVE <span class="clock" id="clock"></span></div>
+  </header>
+
+  <div class="panels">
+    <div class="panel">
+      <h2><span>🏆 Teams</span> <span class="pill" id="team-count">0</span></h2>
+      <div class="rows" id="teams"></div>
+    </div>
+    <div class="panel">
+      <h2><span>🧑‍💻 Players</span> <span class="pill" id="player-count">0</span></h2>
+      <div class="rows" id="players"></div>
+    </div>
+  </div>
+
+  <div class="ticker" id="ticker"></div>
+
+  <script>
+    var TOP_N = 10;
+    function esc(s){ var d=document.createElement('div'); d.textContent = (s==null?'':s); return d.innerHTML; }
+    function medal(r){ return r===1?'🥇':r===2?'🥈':r===3?'🥉':r; }
+    function fmt(n){ return Number(n||0).toLocaleString(); }
+
+    function renderTeams(S){
+      var el=document.getElementById('teams'); var names=(S&&S.teams)||[]; var scores=(S&&S.scores)||[];
+      document.getElementById('team-count').textContent = names.length;
+      if(!names.length){ el.innerHTML='<div class="empty">No teams scoring yet…</div>'; return; }
+      var h='';
+      for(var i=0;i<Math.min(TOP_N,names.length);i++){
+        var rk=i+1, cls=rk<=3?(' top'+rk):'';
+        h+='<div class="row'+cls+'"><div class="rk">'+(rk<=3?'<span class="medal">'+medal(rk)+'</span>':rk)+'</div>'
+          +'<div class="nm">'+esc(names[i])+'</div><div class="sc">'+fmt(scores[i])+'</div></div>';
+      }
+      el.innerHTML=h;
+    }
+    function renderPlayers(I){
+      var el=document.getElementById('players'); var names=(I&&I.players)||[];
+      document.getElementById('player-count').textContent = names.length;
+      if(!names.length){ el.innerHTML='<div class="empty">No players scoring yet…</div>'; return; }
+      var scores=I.scores||[], teams=I.teams||[], ranks=I.ranks||[];
+      var h='';
+      for(var i=0;i<Math.min(TOP_N,names.length);i++){
+        var rk=i+1, cls=rk<=3?(' top'+rk):'';
+        var meta=[]; if(ranks[i]) meta.push(esc(ranks[i])); if(teams[i]&&teams[i]!=='--') meta.push(esc(teams[i]));
+        h+='<div class="row'+cls+'"><div class="rk">'+(rk<=3?'<span class="medal">'+medal(rk)+'</span>':rk)+'</div>'
+          +'<div class="nm">'+esc(names[i])+(meta.length?'<span class="meta">'+meta.join(' · ')+'</span>':'')+'</div>'
+          +'<div class="sc">'+fmt(scores[i])+'</div></div>';
+      }
+      el.innerHTML=h;
+    }
+    function refresh(){
+      fetch('/get_score', {cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
+        .then(function(d){ if(!d) return; renderTeams(d.SCORES); renderPlayers(d.INDIVIDUAL); })
+        .catch(function(){});
+    }
+    function tickerIcon(k){ return k==='blood'?'🩸':k==='medal'?'🏅':k==='up'?'⬆️':'⚡'; }
+    function loadTicker(){
+      fetch('/event_feed?limit=10', {cache:'no-store'}).then(function(r){ return r.ok?r.json():null; })
+        .then(function(d){
+          var el=document.getElementById('ticker');
+          if(!d || d.reveal==='off' || !d.events || !d.events.length){ el.innerHTML=''; return; }
+          var h='';
+          d.events.forEach(function(e){
+            h += '<span class="ev '+esc(e.icon)+'">'+tickerIcon(e.icon)+' '+esc(e.text)+'</span>';
+          });
+          el.innerHTML=h;
+        }).catch(function(){});
+    }
+    function tick(){ var d=new Date(); document.getElementById('clock').textContent = d.toLocaleTimeString(); }
+    tick(); setInterval(tick, 1000);
+    refresh(); setInterval(refresh, 5000);
+    loadTicker(); setInterval(loadTicker, 8000);
+  </script>
+</body>
+</html>

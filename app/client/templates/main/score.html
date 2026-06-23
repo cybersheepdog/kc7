@@ -4,10 +4,40 @@
   <!-- Page Heading -->
   <div class="d-sm-flex align-items-center justify-content-between mb-4">
     <h1 class="h3 mb-0 text-gray-800">Leaderboard</h1>
-    <span id="live-indicator" class="badge badge-pill badge-secondary" title="Auto-refreshing">
-      <span class="live-dot"></span> LIVE
-    </span>
+    <div class="d-flex align-items-center">
+      <a href="/scoreboard/big" target="_blank" class="btn btn-sm btn-outline-primary mr-2" title="Open the full-screen spectator scoreboard">
+        <i class="fas fa-tv mr-1"></i> Big screen
+      </a>
+      <span id="live-indicator" class="badge badge-pill badge-secondary" title="Auto-refreshing">
+        <span class="live-dot"></span> LIVE
+      </span>
+    </div>
   </div>
+
+  <!-- Live event ticker (#54) -->
+  <div id="event-ticker" class="card shadow mb-3" style="display:none;">
+    <div class="card-body py-2 d-flex align-items-center">
+      <span class="badge badge-primary mr-3 flex-shrink-0"><i class="fas fa-bolt mr-1"></i>Live</span>
+      <div id="ticker-items" class="small" style="display:flex; flex-wrap:wrap; gap:.35rem 1.25rem; overflow:hidden;"></div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      function tIcon(k){ return ({blood:'fas fa-tint text-danger', medal:'fas fa-medal text-warning', up:'fas fa-arrow-up text-success'})[k] || 'fas fa-bolt text-primary'; }
+      function loadTicker(){
+        fetch('/event_feed?limit=12', {cache:'no-store'}).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+          if(!d || d.reveal==='off' || !d.events || !d.events.length){ $('#event-ticker').hide(); return; }
+          var h='';
+          d.events.forEach(function(e){
+            h += '<span class="text-nowrap"><i class="'+tIcon(e.icon)+' mr-1"></i>'+$('<div>').text(e.text).html()+'</span>';
+          });
+          $('#ticker-items').html(h); $('#event-ticker').show();
+        }).catch(function(){});
+      }
+      $(loadTicker); setInterval(loadTicker, 8000);
+    })();
+  </script>
 
   <style>
     #live-indicator { font-weight: 600; letter-spacing: .04em; }
@@ -197,7 +227,7 @@
         var row = $('<tr>');
         row.append($('<td>').text(rank + medal));
         row.append($('<td>').append($('<span>').addClass(d.cls).text(d.txt)));
-        var nameCell = $('<td>').text(name);
+        var nameCell = $('<td>').append($('<span>').text(name));
         var bcount = (INDIVIDUAL.badges && INDIVIDUAL.badges[i]) || 0;
         if (bcount > 0) {
           nameCell.append(
@@ -206,6 +236,10 @@
               .attr('title', bcount + ' badge' + (bcount === 1 ? '' : 's') + ' — view showcase')
               .html('<i class="fas fa-medal"></i> ' + bcount)
           );
+        }
+        var rtitle = (INDIVIDUAL.ranks && INDIVIDUAL.ranks[i]) || '';
+        if (rtitle) {
+          nameCell.append($('<div class="small text-muted">').html('<i class="fas fa-user-shield mr-1"></i>').append(document.createTextNode(rtitle)));
         }
         row.append(nameCell);
         row.append($('<td>').append(

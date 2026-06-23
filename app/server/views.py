@@ -13,7 +13,7 @@ from sqlalchemy import asc
 from sqlalchemy.sql.expression import func, select
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
-from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame, UserBadge
+from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame, UserBadge, NotebookEntry, DecoyIndicator
 from app.server.modules.audit.audit_log import record_admin_action
 from app.server.modules.organization.Company import Company, Employee
 from app.server.modules.clock.Clock import Clock
@@ -131,6 +131,55 @@ def get_malicious_indicators():
     return indicators
 
 
+def get_decoy_indicators():
+    """
+    Map of normalized decoy indicator -> benign reason (red herrings, #51). These are
+    admin-seeded known-good indicators; flagging one is a teachable false positive rather
+    than a correct block. An empty table yields an empty map (no decoys = original behavior).
+    """
+    from app.server.modules.scoring.answer_matching import normalize_answer
+    out = {}
+    try:
+        for d in DecoyIndicator.query.all():
+            out[normalize_answer(d.value)] = d.reason or "Known-benign indicator (decoy)."
+    except Exception as e:
+        print("get_decoy_indicators: " + str(e))
+    return out
+
+
+def _record_score_events(user, old_score, new_badges, challenge=None, is_solve=False):
+    """
+    Record live-ticker events (#54) for a scoring action: a rank-up (score crossed a rank
+    title), badge unlocks, and — for challenge solves — first blood. Best-effort and
+    side-effect-only; callers wrap this in try/except so it can never affect scoring.
+    """
+    from app.server.modules.events.game_events import record_event
+    from app.server.modules.scoring.ranks import rank_for_score
+
+    team_name = user.team.name if user.team else None
+    rid = challenge.round_id if challenge is not None else None
+
+    # rank-up
+    if rank_for_score(user.score or 0)["level"] > rank_for_score(old_score or 0)["level"]:
+        record_event("rankup", username=user.username, team_name=team_name,
+                     detail=rank_for_score(user.score or 0)["title"], round_id=rid)
+
+    # first blood — only for challenge solves, and only when this is the first solve
+    if is_solve and challenge is not None:
+        try:
+            if Solve.query.filter_by(challenge_id=challenge.id).count() == 1:
+                record_event("first_blood", username=user.username, team_name=team_name,
+                             challenge_name=challenge.name, category=challenge.category,
+                             challenge_id=challenge.id, round_id=rid)
+        except Exception as e:
+            print("first_blood check error:", e)
+
+    # badge unlocks
+    for b in (new_badges or []):
+        record_event("badge", username=user.username, team_name=team_name,
+                     detail=(b.get("name") if isinstance(b, dict) else str(b)))
+
+
 # Define the blueprint: main, set its url prefix: app.url/
 main = Blueprint("main", __name__)
 
@@ -199,6 +248,17 @@ def home():
     if current_user.is_authenticated:
         return render_template("main/score.html")
     return redirect(url_for("auth.login"))
+
+
+@main.route("/scoreboard/big")
+def scoreboard_big():
+    """
+    Full-screen spectator scoreboard for projecting at live events (#56). Standalone
+    (no sidebar/nav), auto-refreshes by polling the public /get_score endpoint. Public
+    so it can run on a kiosk/projection machine that isn't logged in — it only shows the
+    same leaderboard data /get_score already serves.
+    """
+    return render_template("main/scoreboard_big.html")
 
 
 @main.route("/admin/manage_game")
@@ -439,6 +499,13 @@ def update_deny_list():
         correct_new = [ind for ind in newly_added if normalize_answer(ind) in malicious_normalized]
         wrong_new = [ind for ind in newly_added if normalize_answer(ind) not in malicious_normalized]
 
+        # Red herrings (#51): of the wrong indicators, which are known-benign decoys?
+        # Surface them distinctly so the player learns *why* they're benign.
+        decoy_map = get_decoy_indicators()
+        decoys_hit = [{"indicator": ind, "reason": decoy_map.get(normalize_answer(ind),
+                       "Known-benign indicator (decoy).")}
+                      for ind in wrong_new if normalize_answer(ind) in decoy_map]
+
         game_session = db.session.get(GameSession, 1)
         points_per_correct = calculate_time_weighted_points(POINTS_PER_INDICATOR, game_session)
 
@@ -450,6 +517,7 @@ def update_deny_list():
         penalty = _sc["penalty"]
 
         now = datetime.now()
+        _old_user_score = current_user.score or 0   # for rank-up event (#54)
         if points_earned > 0:
             current_user.score = (current_user.score or 0) + points_earned
             current_user.last_score_time = now
@@ -486,6 +554,22 @@ def update_deny_list():
             print("User " + current_user.username + " -" + str(penalty) + " pts penalty, "
                   + str(len(wrong_new)) + " wrong indicators")
 
+        # Optional EXTRA penalty for flagging a known-benign decoy (#51). Off by default;
+        # decoys already count as wrong above, so this just lets a facilitator make a
+        # classic false positive sting a little more. Recorded as a reconcilable adjustment.
+        decoy_penalty_per = int(current_app.config.get("MITIGATION_DECOY_PENALTY", 0) or 0)
+        decoy_penalty = max(0, decoy_penalty_per * len(decoys_hit))
+        if decoy_penalty > 0:
+            current_user.score = (current_user.score or 0) - decoy_penalty
+            current_user.last_score_time = now
+            if current_user.team:
+                current_user.team.score = (current_user.team.score or 0) - decoy_penalty
+                current_user.team.last_score_time = now
+            from app.server.models import ScoreAdjustment
+            db.session.add(ScoreAdjustment(
+                target_type="user", target_id=current_user.id, delta=-decoy_penalty,
+                reason="decoy indicator(s): %d" % len(decoys_hit), admin_username="system"))
+
         display_list = [x.strip() for x in deny_list.split(chr(10)) if x.strip()]
         current_user.team._mitigations = json.dumps(display_list)
         db.session.commit()
@@ -500,6 +584,13 @@ def update_deny_list():
         except Exception as _be:
             print("badge hook error:", _be)
 
+        # Live event ticker (#54): rank-up / badge moments from indicator scoring (no first
+        # blood here — that's challenge-only). Best-effort.
+        try:
+            _record_score_events(current_user, _old_user_score, new_badges, is_solve=False)
+        except Exception as _ee:
+            print("event hook error:", _ee)
+
         return jsonify(
             success=current_user.team._mitigations,
             points_earned=points_earned,
@@ -508,6 +599,7 @@ def update_deny_list():
             user_score=current_user.score,
             correct_indicators=correct_new,
             wrong_indicators=wrong_new,
+            decoys=decoys_hit,
             new_badges=new_badges,
         )
     except Exception as e:
@@ -911,11 +1003,13 @@ def _compute_leaderboard():
     ]
     player_data.sort(key=lambda x: (-x["score"], x["time"] or "9999-99-99"))
 
+    from app.server.modules.scoring.ranks import title_for_score
     INDIVIDUAL = {
         "players": [p["username"] for p in player_data],
         "scores":  [p["score"]   for p in player_data],
         "teams":   [p["team"]    for p in player_data],
         "badges":  [p["badges"]  for p in player_data],
+        "ranks":   [title_for_score(p["score"]) for p in player_data],
     }
 
     return {"SCORES": SCORES, "INDIVIDUAL": INDIVIDUAL}
@@ -930,6 +1024,20 @@ def get_score():
     except Exception as e:
         print(e)
         abort(404)
+
+
+@main.route("/event_feed", methods=["GET"])
+def event_feed():
+    """
+    Live event ticker feed (#54). Public (like /get_score) so the big-screen scoreboard
+    can poll it. Returns spoiler-controlled events per EVENT_TICKER_REVEAL.
+    """
+    try:
+        from app.server.modules.events.game_events import recent_feed
+        return jsonify(recent_feed(limit=int(request.args.get("limit", 20))))
+    except Exception as e:
+        print("event_feed error:", e)
+        return jsonify({"reveal": "off", "events": []})
 
 
 @main.route("/score_stream", methods=["GET"])
@@ -1239,6 +1347,7 @@ def submit_answer():
             game_session  = db.session.get(GameSession, 1)
             points_earned = calculate_time_weighted_points(challenge.value, game_session)
 
+        _old_user_score = current_user.score or 0   # for rank-up event (#54)
         current_user.score = (current_user.score or 0) + points_earned
         current_user.last_score_time = now
         current_user.team.score = (current_user.team.score or 0) + points_earned
@@ -1271,6 +1380,13 @@ def submit_answer():
                           for b in evaluate_and_award(current_user)]
         except Exception as _be:
             print("badge hook error:", _be)
+
+        # Live event ticker (#54): record first blood / rank-up / badge moments. Best-effort.
+        try:
+            _record_score_events(current_user, _old_user_score, new_badges,
+                                 challenge=challenge, is_solve=True)
+        except Exception as _ee:
+            print("event hook error:", _ee)
 
         return jsonify(
             correct=True,
@@ -1881,6 +1997,9 @@ def profile(username):
             "total": r_total,
         })
 
+    from app.server.modules.scoring.ranks import rank_for_score
+    rank_info = rank_for_score(target.score)
+
     return render_template(
         "main/profile.html",
         target=target,
@@ -1890,6 +2009,7 @@ def profile(username):
         total_solved=total_solved,
         total_challenges=total_challenges,
         round_stats=round_stats,
+        rank_info=rank_info,
         is_own_profile=(target.id == current_user.id),
     )
 
@@ -2345,6 +2465,66 @@ def guide_observer():
 @login_required
 def guide_grader():
     return render_template("guides/grader.html")
+
+
+# ---------------------------------------------------------------------------
+# Investigation notebook (#48): a player's private notes / IOC / timeline scratchpad.
+# Personal and additive — no effect on scoring. Every route is scoped to current_user.
+# ---------------------------------------------------------------------------
+@main.route("/notebook")
+@login_required
+def notebook():
+    entries = [e.to_dict() for e in
+               NotebookEntry.query.filter_by(user_id=current_user.id)
+               .order_by(NotebookEntry.created_at.asc()).all()]
+    return render_template("main/notebook.html", entries=entries)
+
+
+@main.route("/notebook/add", methods=["POST"])
+@login_required
+def notebook_add():
+    kind = (request.form.get("kind") or "note").strip().lower()
+    if kind not in ("note", "ioc", "event"):
+        kind = "note"
+    content = (request.form.get("content") or "").strip()
+    tag = (request.form.get("tag") or "").strip() or None
+    if not content:
+        return jsonify(ok=False, message="Nothing to add.")
+    # Auto-detect the IOC type if the player didn't supply a tag.
+    if kind == "ioc" and not tag:
+        try:
+            from app.server.modules.badges.badges import classify_indicator
+            tag = classify_indicator(content)
+        except Exception:
+            tag = None
+    entry = NotebookEntry(user_id=current_user.id, kind=kind,
+                          content=content[:5000], tag=(tag[:160] if tag else None))
+    db.session.add(entry)
+    db.session.commit()
+    return jsonify(ok=True, entry=entry.to_dict())
+
+
+@main.route("/notebook/delete", methods=["POST"])
+@login_required
+def notebook_delete():
+    try:
+        eid = int(request.form.get("id", 0) or 0)
+    except (TypeError, ValueError):
+        eid = 0
+    entry = db.session.get(NotebookEntry, eid)
+    if entry and entry.user_id == current_user.id:
+        db.session.delete(entry)
+        db.session.commit()
+        return jsonify(ok=True)
+    return jsonify(ok=False)
+
+
+@main.route("/notebook/clear", methods=["POST"])
+@login_required
+def notebook_clear():
+    NotebookEntry.query.filter_by(user_id=current_user.id).delete()
+    db.session.commit()
+    return jsonify(ok=True)
 
 
 @main.route("/admin/game_guide")
@@ -3122,7 +3302,9 @@ def manage_indicators():
         'email':  MaliciousIndicator.query.filter_by(itype='email').count(),
         'hash':   MaliciousIndicator.query.filter_by(itype='hash').count(),
     }
-    return render_template("admin/manage_indicators.html", indicators=indicators, counts=counts)
+    decoys = DecoyIndicator.query.order_by(DecoyIndicator.added_at.desc()).all()
+    return render_template("admin/manage_indicators.html", indicators=indicators,
+                           counts=counts, decoys=decoys)
 
 
 @main.route("/admin/add_indicator", methods=["POST"])
@@ -3168,6 +3350,51 @@ def delete_indicator():
     except Exception as e:
         print("delete_indicator error:", e)
         flash("Failed to delete indicator: " + str(e), "error")
+    return redirect(url_for("main.manage_indicators"))
+
+
+@main.route("/admin/add_decoy", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def add_decoy():
+    """Admin: add a benign-but-suspicious decoy indicator (#51)."""
+    try:
+        value = request.form.get("value", "").strip()
+        reason = request.form.get("reason", "").strip()
+        itype = request.form.get("itype", "auto").strip()
+        if not value:
+            flash("Decoy value is required.", "error")
+            return redirect(url_for("main.manage_indicators"))
+        if itype == "auto":
+            itype = _detect_itype(value)
+        if DecoyIndicator.query.filter_by(value=value.lower()).first():
+            flash(f"Decoy already exists: {value}", "info")
+            return redirect(url_for("main.manage_indicators"))
+        db.session.add(DecoyIndicator(value=value, itype=itype, reason=reason))
+        db.session.commit()
+        record_admin_action("decoy.add", target=value, detail="type=%s" % itype)
+        flash(f"Added decoy: {value} ({itype})", "success")
+    except Exception as e:
+        print("add_decoy error:", e)
+        flash("Failed to add decoy: " + str(e), "error")
+    return redirect(url_for("main.manage_indicators"))
+
+
+@main.route("/admin/delete_decoy", methods=["POST"])
+@login_required
+@roles_required("Admin")
+def delete_decoy():
+    """Admin: remove a decoy indicator."""
+    try:
+        did = int(request.form["decoy_id"])
+        d = db.session.get(DecoyIndicator, did)
+        if d:
+            db.session.delete(d)
+            db.session.commit()
+            flash("Decoy removed.", "success")
+    except Exception as e:
+        print("delete_decoy error:", e)
+        flash("Failed to delete decoy: " + str(e), "error")
     return redirect(url_for("main.manage_indicators"))
 
 

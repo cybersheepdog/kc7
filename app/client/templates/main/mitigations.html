@@ -93,10 +93,24 @@
         var userScore    = data.user_score   || 0;
         var correct      = data.correct_indicators || [];
         var wrong        = data.wrong_indicators || [];
+        var decoys       = data.decoys || [];
 
         var html = '';
 
         if (window.showBadgeToasts) window.showBadgeToasts(data.new_badges);
+
+        // Red-herring feedback (#51): teach why a flagged indicator is actually benign.
+        if (decoys.length > 0) {
+          toastr['warning']('Decoy flagged — that indicator is known-benign.');
+          html += '<div class="alert alert-warning py-2"><i class="fas fa-mask mr-1"></i> '
+               +  '<strong>Decoy' + (decoys.length === 1 ? '' : 's') + ' flagged</strong> — these look '
+               +  'suspicious but are <strong>benign</strong>:<ul class="small mb-0 mt-1">';
+          decoys.forEach(function(d) {
+            html += '<li><code>' + $('<div>').text(d.indicator).html() + '</code> &mdash; '
+                 +  $('<div>').text(d.reason || 'known-benign').html() + '</li>';
+          });
+          html += '</ul></div>';
+        }
 
         if (penalty > 0) {
           toastr['warning']('-' + penalty + ' points: ' + wrong.length + ' wrong indicator' + (wrong.length === 1 ? '' : 's') + '.');

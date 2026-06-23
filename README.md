@@ -102,6 +102,9 @@ Optional behaviors are gated behind flags in `config.py`. **Every one is off / z
 | `DYNAMIC_SCORING_ENABLED` | CTFd-style value decay as more teams solve (`DYNAMIC_SCORING_MINIMUM` / `DYNAMIC_SCORING_DECAY`) + first-blood bonus (`FIRST_BLOOD_BONUS_PCT`) | off |
 | `MITIGATION_WRONG_PENALTY` | Deduct points per wrong indicator (reconcilable) | `0` |
 | `MITIGATION_RATE_LIMIT_SECONDS` | Throttle rapid indicator resubmissions | `0` |
+| `MITIGATION_DECOY_PENALTY` | Extra point cost for flagging a known-benign decoy indicator (decoys are recognized + explained regardless) | `0` |
+| `EVENT_TICKER_REVEAL` | Live event ticker reveal level: `off` / `standings` (spoiler-safe) / `category` / `full` | `standings` |
+| `EVENT_TICKER_FIRSTBLOOD_AFTER_N` | Withhold a first-blood challenge/category name until N teams have solved it | `0` |
 | `LEADERBOARD_CACHE_SECONDS` | Cache the computed leaderboard for N seconds | `2` |
 | `LIVE_SCORE_SSE_ENABLED` | Push live scoreboard updates over SSE (`LIVE_SCORE_SSE_POLL_SECONDS` / `_MAX_SECONDS`); falls back to polling | off |
 | `GAME_SCHEDULER_ENABLED` | Background scheduler for auto game start/stop (`GAME_SCHEDULER_INTERVAL_SECONDS`) | off |
@@ -120,6 +123,8 @@ Optional behaviors are gated behind flags in `config.py`. **Every one is off / z
 
 #### Mitigations (Indicator Scoring)
 Players submit malicious indicators — domains, IPs, email addresses, and file hashes — discovered through KQL investigation in ADX. Each correct submission earns points with **time-weighted scoring**: submitting earlier in a session earns more (up to 2× base value in the first 24 hours). For higher-stakes events you can optionally discourage guessing 🆕: set `MITIGATION_WRONG_PENALTY` in `config.py` to deduct points for each wrong indicator (recorded as a reconcilable adjustment), and/or `MITIGATION_RATE_LIMIT_SECONDS` to throttle rapid resubmissions. Both default to 0 (off), so casual play is unaffected.
+
+**Red-herring decoys** 🆕 — to train real triage instinct, admins can seed **decoy indicators** (Admin Central → Malicious Indicators): known-benign-but-suspicious items like a legitimate partner mail server, a sinkholed IP, or a dual-use admin tool's hash, each with a short reason. When a player flags a decoy, instead of a generic "wrong" they're told it's a **known-benign decoy and *why*** — so they learn to discriminate real IOCs from noise. Decoys count as wrong answers; `MITIGATION_DECOY_PENALTY` (default 0) adds an optional extra point cost. With no decoys seeded, behavior is unchanged.
 
 #### Challenges (Q&A)
 Players answer written questions that test their analysis and knowledge. Challenges are grouped by category and show point value and description. Answers are case-insensitive and support multiple accepted values separated by semicolons.
@@ -148,11 +153,20 @@ There are **46 badges** out of the box, across these families:
 
 The badge **catalog lives in code** (`app/server/modules/badges/badges.py`); only awards are stored, in a `UserBadge` side-table that auto-creates with no migration. Facilitators grant/revoke the discretionary badges from **Admin Central → Badges** (`/admin/badges`), and every manual grant is written to the Audit Log. To add a new badge, drop an SVG in `static/images/badges/` and add one catalog entry with a predicate.
 
+#### Investigation Notebook 🆕
+Every player gets a private **investigation notebook** (`/notebook`, in the sidebar) — the analyst workspace the game was missing. It's a three-pane scratchpad: **Notes** for findings, **Indicators** for stashing IOCs as you pivot (the type — domain / IP / email / hash — is auto-detected and each has a one-click copy button), and a **Timeline** for reconstructing the intrusion (events sort by the time you enter). Add/remove entries inline without leaving the page. It's completely private to each player and has **no effect on scoring** — purely a place to think. Stored in a `notebook_entries` side-table scoped to the user.
+
 #### Rounds (Named Game Sessions)
 Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
 
 #### Leaderboard
-The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams, Players, and **Progress** tabs. Rankings are sorted by score with tie-breaking by earliest score time, and the live Teams/Players views now show **rank-movement deltas** (▲/▼ since the last update, "NEW" on first appearance). The board refreshes itself automatically: by default it polls every 10 seconds, and a pulsing **LIVE** badge shows it's updating. For near-real-time **push** updates (so a whole room sees movement the instant a score lands), enable `LIVE_SCORE_SSE_ENABLED` 🆕 in `config.py` — the page then streams updates over Server-Sent Events (`/score_stream`) and automatically falls back to polling if the stream is unavailable. (SSE needs a threaded/multi-worker server such as gunicorn or `flask run` with threading.) Each player row also shows a 🆕 **badge-count chip** that links to that player's badge showcase (`/u/<name>/badges`).
+The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams, Players, and **Progress** tabs. Rankings are sorted by score with tie-breaking by earliest score time, and the live Teams/Players views now show **rank-movement deltas** (▲/▼ since the last update, "NEW" on first appearance). The board refreshes itself automatically: by default it polls every 10 seconds, and a pulsing **LIVE** badge shows it's updating. For near-real-time **push** updates (so a whole room sees movement the instant a score lands), enable `LIVE_SCORE_SSE_ENABLED` 🆕 in `config.py` — the page then streams updates over Server-Sent Events (`/score_stream`) and automatically falls back to polling if the stream is unavailable. (SSE needs a threaded/multi-worker server such as gunicorn or `flask run` with threading.) Each player row also shows a 🆕 **badge-count chip** that links to that player's badge showcase (`/u/<name>/badges`), and an 🆕 **analyst rank title** beneath the name (see below).
+
+**Analyst ranks** 🆕 — players climb a flavorful career ladder as their score grows (Recruit → Analyst I/II → SOC Analyst → Incident Responder → Threat Hunter → … → Cyber Sentinel). The current title shows on the scoreboard and on each player's **profile**, where a progress bar counts down the points to the next rank. It's purely cosmetic — it never affects scoring or standings.
+
+**Big-screen / spectator mode** 🆕 — the **Big screen** button on the leaderboard opens a standalone, full-screen board (`/scoreboard/big`) designed for projecting at live events: Teams and Players top-10 side by side with medals, rank titles, a pulsing LIVE indicator and clock, auto-refreshing every few seconds. It has no sidebar or navigation and reads the same public leaderboard data, so it can run on a kiosk/projection machine without logging in.
+
+**Live event ticker** 🆕 — a feed of notable moments (first blood, badge unlocks, rank-ups) shows on the scoreboard and along the bottom of the big-screen view. Because naming a challenge or category would spoil which TTPs are in play, a facilitator **reveal level** (`EVENT_TICKER_REVEAL` in `config.py`) controls what's shown: the default `standings` is spoiler-safe (badges, rank-ups, and a generic "drew first blood!" with no names), while `category` and `full` progressively reveal more, and `off` disables it. `EVENT_TICKER_FIRSTBLOOD_AFTER_N` can withhold a challenge/category name until that many teams have solved it. Events are recorded best-effort and never affect scoring.
 
 The **Progress** tab 🆕 adds richer analytics drawn from the solve log (`/score_breakdown`): a **score-over-time** line chart per team (cumulative score by minutes since the first solve), a **progress-by-category** table showing how many challenges each team has cracked in each category (Attribution, Command & Control, Malware, MITRE ATT&CK, …), and a **first-blood** banner calling out who drew first blood and on which challenge.
 
@@ -272,6 +286,7 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Single add, bulk paste, or CSV import
 - Summary cards show counts by indicator type
 - Particularly useful when running against a pre-existing ADX dataset where the app hasn't generated the game data locally
+- **Decoy (red-herring) indicators** 🆕 — seed known-benign-but-suspicious indicators with a reason; flagging one teaches the player it's benign (see *Mitigations* under For Players)
 
 #### ADX Configuration (`/admin/adx_config`)
 - Configure Azure Data Explorer connection settings through the GUI
@@ -395,6 +410,9 @@ Validation is dependency-free and additive: valid configs behave exactly as befo
 | `challenge_gating` 🆕 | Optional per-challenge hint, timed unlock, and prerequisite rules |
 | `hint_reveals` 🆕 | Records that a player revealed a hint (so the cost is charged once) |
 | `user_badges` 🆕 | Achievement badges a player has earned (catalog lives in code) |
+| `notebook_entries` 🆕 | Each player's private investigation notes, IOCs, and timeline events |
+| `decoy_indicators` 🆕 | Admin-seeded benign red-herring indicators (with a reason) for discrimination training |
+| `game_events` 🆕 | Notable moments (first blood / badge / rank-up) for the live event ticker |
 | `scheduled_game` 🆕 | Auto start/stop times for unattended events |
 | `game_run_logs` 🆕 | History of each data-generation run (timing, status, per-table row counts) |
 | `admin_audit` 🆕 | Append-only log of privileged admin actions |
