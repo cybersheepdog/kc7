@@ -1,0 +1,172 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<style>
+  #kql-editor { font-family: 'Courier New', monospace; font-size: .9rem; min-height: 150px; white-space: pre; }
+  .kql-schema { max-height: 70vh; overflow-y: auto; }
+  .kql-schema .tbl { cursor: pointer; font-weight: 700; margin-top: .35rem; }
+  .kql-schema .col { cursor: pointer; font-size: .78rem; color: #858796; padding-left: 1rem; }
+  .kql-schema .tbl:hover, .kql-schema .col:hover { color: #4e73df; }
+  #kql-results { max-height: 60vh; overflow: auto; }
+  #kql-results td, #kql-results th { white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+  #kql-results td.kql-cell { cursor: pointer; }
+  #kql-results td.kql-cell:hover { background: #eef2ff; }
+  #kql-meta { font-size: .85rem; }
+  #kql-recent { max-height: 50vh; overflow-y: auto; }
+</style>
+
+<div class="d-sm-flex align-items-center justify-content-between mb-2">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-terminal mr-2 text-primary"></i>Query Console</h1>
+  <span class="badge badge-info p-2">Read-only KQL</span>
+</div>
+<p class="text-muted small mb-3">
+  Investigate the <code>SecurityLogs</code> data with KQL without leaving the app. This console is
+  <strong>read-only</strong> — control commands (anything starting with <code>.</code>) and cross-database
+  queries are blocked. Click a table or column to insert it; click a result cell to copy it (or save it to
+  your <a href="/notebook">notebook</a>). <em>Note: your queries may be visible to facilitators.</em>
+</p>
+
+<div class="row">
+  <div class="col-lg-3">
+    <div class="card shadow mb-4">
+      <div class="card-header py-2"><h6 class="m-0 font-weight-bold text-primary">Tables &amp; columns</h6></div>
+      <div class="card-body kql-schema p-2" id="kql-schema"><div class="text-muted small">Loading schema…</div></div>
+    </div>
+  </div>
+
+  <div class="col-lg-9">
+    <div class="card shadow mb-3">
+      <div class="card-body">
+        <textarea id="kql-editor" class="form-control mb-2" spellcheck="false" autocapitalize="off"
+                  placeholder="Email&#10;| where subject has 'invoice'&#10;| take 50"></textarea>
+        <div class="d-flex align-items-center">
+          <button id="kql-run" class="btn btn-primary btn-sm"><i class="fas fa-play mr-1"></i> Run
+            <span class="text-white-50 ml-1">(Ctrl+Enter)</span></button>
+          <div class="dropdown ml-2">
+            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="kql-recent-btn" data-toggle="dropdown">
+              <i class="fas fa-history mr-1"></i>Recent</button>
+            <div class="dropdown-menu" id="kql-recent" style="min-width:300px;"></div>
+          </div>
+          <span id="kql-meta" class="ml-3 text-muted"></span>
+        </div>
+        <div id="kql-suggest" class="mt-2"></div>
+      </div>
+    </div>
+    <div id="kql-error" class="alert alert-danger py-2" style="display:none;"></div>
+    <div class="card shadow mb-4">
+      <div class="card-body" id="kql-results"><div class="text-muted small">Run a query to see results.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var SCHEMA_NAMES = [];
+  function esc(s){ return $('<div>').text(s==null?'':s).html(); }
+
+  function kqlInsert(text){
+    var ta=document.getElementById('kql-editor'), s=ta.selectionStart, e=ta.selectionEnd;
+    ta.value = ta.value.substring(0,s) + text + ta.value.substring(e);
+    ta.selectionStart = ta.selectionEnd = s + text.length; ta.focus();
+  }
+
+  function loadSchema(){
+    $.getJSON('/kql/schema', function(d){
+      var tables=(d&&d.tables)||[]; var names={};
+      if(!tables.length){ $('#kql-schema').html('<div class="text-muted small">Schema unavailable.</div>'); return; }
+      var h='';
+      tables.forEach(function(t){
+        names[t.table]=1;
+        h+='<div class="tbl" data-ins="'+t.table+'">'+esc(t.table)+'</div>';
+        (t.columns||[]).forEach(function(c){
+          names[c.name]=1;
+          h+='<div class="col" data-ins="'+c.name+'" title="'+esc(c.type)+'">'+esc(c.name)+'</div>';
+        });
+      });
+      $('#kql-schema').html(h);
+      SCHEMA_NAMES = Object.keys(names);
+    }).fail(function(){ $('#kql-schema').html('<div class="text-muted small">Schema unavailable.</div>'); });
+  }
+
+  // --- token autocomplete suggestions ---
+  function currentToken(ta){
+    var pos=ta.selectionStart, val=ta.value, start=pos;
+    while(start>0 && /[A-Za-z0-9_]/.test(val[start-1])) start--;
+    return {text: val.substring(start,pos), start:start, end:pos};
+  }
+  function matchesFor(tok){
+    if(tok.length<2) return [];
+    var t=tok.toLowerCase();
+    return SCHEMA_NAMES.filter(function(n){ return n.toLowerCase().indexOf(t)===0 && n.toLowerCase()!==t; }).slice(0,8);
+  }
+  function showSuggest(){
+    var ta=document.getElementById('kql-editor'); var tok=currentToken(ta);
+    var m=matchesFor(tok.text); var box=$('#kql-suggest');
+    if(!m.length){ box.empty(); return; }
+    var h='<span class="text-muted small mr-1">Suggestions:</span>';
+    m.forEach(function(n){ h+='<button class="btn btn-sm btn-light border mr-1 mb-1 kql-sg" data-n="'+n+'">'+esc(n)+'</button>'; });
+    box.html(h);
+  }
+  function applySuggest(name){
+    var ta=document.getElementById('kql-editor'); var tok=currentToken(ta);
+    ta.value = ta.value.substring(0,tok.start) + name + ta.value.substring(tok.end);
+    var np=tok.start+name.length; ta.selectionStart=ta.selectionEnd=np; ta.focus(); $('#kql-suggest').empty();
+  }
+
+  // --- recent queries (re-run) ---
+  function loadRecent(){
+    $.getJSON('/kql/history', function(d){
+      var qs=(d&&d.queries)||[], box=$('#kql-recent');
+      if(!qs.length){ box.html('<span class="dropdown-item-text text-muted small">No recent queries yet.</span>'); return; }
+      var h=''; qs.forEach(function(q){
+        h+='<a class="dropdown-item small kql-rq" href="#" title="'+esc(q)+'"><code>'+esc(q.length>80?q.slice(0,80)+'…':q)+'</code></a>';
+      });
+      box.html(h);
+    });
+  }
+
+  // --- save a result value to the notebook ---
+  function saveIoc(v){ $.post('/notebook/add', {kind:'ioc', content:v}, function(r){ if(r&&r.ok && window.toastr) toastr.success('Saved to notebook'); }); }
+
+  function runQuery(){
+    var q=$('#kql-editor').val(); if(!q.trim()) return;
+    var btn=$('#kql-run').prop('disabled', true); $('#kql-meta').text('Running…'); $('#kql-error').hide();
+    $.post('/kql/run', {query:q}, function(d){
+      btn.prop('disabled', false);
+      if(!d || !d.ok){
+        $('#kql-error').text((d&&d.error)||'Query failed.').show();
+        $('#kql-meta').text(''); $('#kql-results').html('<div class="text-muted small">No results.</div>'); return;
+      }
+      var cols=d.columns||[], rows=d.rows||[];
+      var h='<table class="table table-sm table-bordered table-hover mb-0"><thead class="thead-light"><tr>';
+      cols.forEach(function(c){ h+='<th>'+esc(c)+'</th>'; });
+      h+='</tr></thead><tbody>';
+      rows.forEach(function(r){
+        h+='<tr>'; r.forEach(function(v){ h+='<td class="kql-cell" data-val="'+esc(v)+'" title="Click to copy / save to notebook">'+esc(v)+'</td>'; }); h+='</tr>';
+      });
+      h+='</tbody></table>';
+      $('#kql-results').html(rows.length ? h : '<div class="text-muted small">0 rows.</div>');
+      $('#kql-meta').text(d.row_count+' row'+(d.row_count===1?'':'s')+(d.truncated?' (truncated)':'')+' · '+d.duration_ms+' ms');
+    }).fail(function(){ btn.prop('disabled', false); $('#kql-error').text('Network error.').show(); $('#kql-meta').text(''); });
+  }
+
+  $(function(){
+    loadSchema();
+    $('#kql-schema').on('click', '.tbl, .col', function(){ kqlInsert($(this).attr('data-ins')); });
+    $('#kql-run').on('click', runQuery);
+    $('#kql-editor').on('input keyup click', showSuggest);
+    $('#kql-suggest').on('click', '.kql-sg', function(){ applySuggest($(this).attr('data-n')); });
+    $('#kql-editor').on('keydown', function(e){
+      if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); runQuery(); return; }
+      if(e.key==='Tab'){ var m=matchesFor(currentToken(this).text); if(m.length){ e.preventDefault(); applySuggest(m[0]); } }
+    });
+    $('#kql-recent-btn').on('click', loadRecent);
+    $('#kql-recent').on('click', '.kql-rq', function(e){ e.preventDefault(); $('#kql-editor').val($(this).attr('title')); });
+    $('#kql-results').on('click', 'td.kql-cell', function(){
+      var v=$(this).attr('data-val'); if(v==null) return;
+      if(navigator.clipboard) navigator.clipboard.writeText(v);
+      if(window.toastr) toastr.info('Copied. Click here to save it to your notebook.', '', {onclick:function(){ saveIoc(v); }, timeOut:4500});
+    });
+  });
+</script>
+
+{% endblock %}

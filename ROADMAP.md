@@ -906,6 +906,7 @@ Risk is the chance of disturbing existing behavior.
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
 | 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | ✅ Done — force-change gate, Observer/Grader roles (curated `roles_accepted`, Admin unchanged), and DB+config backup/restore (`/admin/backup`, staged DB swap) |
+| ★ | Game Settings GUI (feature-flag toggles) | M | Low | ✅ Done — `/admin/settings` toggles the opt-in flags from the GUI; `AppSetting` overrides loaded onto `current_app.config` at startup + live on save (no restart, works regardless of which config class loads — fixes the ProductionConfig/DevelopmentConfig footgun). Grouped/typed `Flag` catalog, pure tested `coerce`, secrets excluded, audited |
 | 37 | Admin-action audit log | S–M | Low | ✅ Done — `AdminAudit` table + guarded `record_admin_action()` wired into game/user/config/challenge routes; read-only `/admin/audit_log` view with category filter |
 | 30 | Manual score adjustments | S | Low | ✅ Done — `/admin/score_adjust` (+/- team/player, reason, audited); folded into score-audit rebuild so `?apply=1` preserves them |
 | 33 | Answer tester | S | Very low | ✅ **Done** — author UI at `/admin/answer_tester` (picker + verdict + per-alternate breakdown) over the existing `/admin/test_answer` `explain_match` API |
@@ -946,7 +947,8 @@ in place (badges, the SSE leaderboard, ATT&CK tags on challenges, answer normali
 | 49 | Incident briefing + chapter narrative | S | Low | 🆕 Proposed — open with a CISO "we've been breached" memo, drop story beats as the kill chain unfolds; leverages the game-guide generator (#12) |
 | 50 | Threat-intel report reading | S | Low | 🆕 Proposed — surface a readable intel report per actor for attribution; builds on actor `report_url` (#45) |
 | 51 | Red-herring (decoy) indicators | M | Low–Med | ✅ Done — admin-seeded `DecoyIndicator` side-table (value + benign reason) on Manage Indicators; flagging a decoy returns a distinct "known-benign — here's why" message (teaches discrimination) instead of a generic "wrong". Optional extra `MITIGATION_DECOY_PENALTY` (default 0 → recognized + explained, no cost; reconcilable). Malicious always wins on conflict; empty table = original behavior |
-| 52 | Embedded KQL console | L | Medium | 🆕 Proposed — in-app, read-only query pane proxying to ADX so players investigate without leaving the app (SIEM-style). Biggest realism win, largest build |
+| 52 | Embedded KQL console | L | Medium | ✅ **A+B+C done** — in-app read-only KQL pane (`/kql`, opt-in `EMBEDDED_KQL_ENABLED`): pure tested `validate_query` (blocks `.`-commands incl. after `;`, `cluster()`/`database()`, `externaldata`), `execute_query` against `SecurityLogs` with viewer principal + server-timeout/row caps + per-player rate limit, schema sidebar from `CUSTOM_TYPES`, results grid. **B:** query log + `/admin/query_feed` (#52a). **C:** schema-based suggestion chips (Tab to accept), click a result cell to copy / **save to notebook** (#48), and a **Recent** dropdown re-running your own past queries (`/kql/history`). *Live-cluster smoke test of the execute path still needed — sandbox can't reach ADX* |
+| 52a | Admin live-query view | M | Low | ✅ Done — every console query logged to `QueryLog`; `/admin/query_feed` (roles_accepted Admin/Observer/Grader) shows recent queries + per-player volume/error-rate + integrity flags (**stuck** = high error rate, **shared** = same query from multiple players), auto-refreshing. **Round filter** (`?round=<id>` / a round picker) scopes the feed to that round's participants. Pure tested `summarize_queries` + round-filter logic. Nav appears only when `EMBEDDED_KQL_ENABLED` |
 
 **Progression & social**
 
@@ -968,6 +970,43 @@ in place (badges, the SSE leaderboard, ATT&CK tags on challenges, answer normali
 > Suggested high-leverage starter set (mostly small, very visible): **#48 notebook**,
 > **#49 briefing/narrative**, **#57 post-solve explainer + #58 wrong-answer nudges**,
 > **#53 analyst ranks**, and **#54 live event ticker**.
+
+#### #52 Embedded KQL console — design notes
+
+Keeps players in the app instead of the Azure Data Explorer portal: a KQL editor + Run
+button posts to a backend route that executes the query against the `SecurityLogs`
+Kusto database (reusing the existing `azure-kusto-data` client + ADX config) and returns
+the result table to render inline.
+
+**Security model (the reason this is the largest/most careful item):** the backend runs
+*player-supplied* KQL with the app's credentials, so it must be locked down —
+
+- **Read-only by construction** — use a dedicated **viewer-only** AAD principal (distinct
+  from the ingest principal; the *Manage ADX Perms* page already grants player viewer
+  access), so it physically cannot drop/alter/ingest.
+- **Statement allowlist** — reject control commands (anything starting with `.`) and
+  cross-scope functions (`cluster(...)`, `database(...)`) so a query can't leave `SecurityLogs`.
+- **Resource caps** — per-request server timeout (~30–60s), `truncationmaxrecords`, a hard
+  row cap (~5,000), and a per-player rate limit, so a runaway query can't hurt the cluster.
+- **Opt-in** — `EMBEDDED_KQL_ENABLED` (default off → players use the portal as today; only
+  switch on once a read-only principal is configured).
+
+**Player UX:** KQL editor (CodeMirror/Monaco) with Run / Ctrl+Enter and row-count + timing;
+a **schema sidebar** of tables/columns (click to insert — biggest help for beginners); a
+sortable/paginated results grid with clean Kusto error messages; and a **"save to notebook"**
+action on any result cell that drops a typed IOC into the investigation notebook (#48), so
+query → pivot → stash is one loop. Plus query history and a starter cheat sheet (ties to #59).
+
+**Phasing:** (A) secure execute route + editor + results + schema sidebar behind the opt-in
+flag — most of the risk; (B) `QueryLog` + the admin live-query feed (#52a) + integrity
+signals; (C) polish — autocomplete, notebook integration, saved queries.
+
+**#52a Admin live-query view** logs each query (player, text, rows, duration, success/error)
+and streams a facilitator feed at `/admin/query_feed`. It surfaces *stuck* players (many
+empty/errored queries), teaching moments (common mistakes), engagement (active vs idle),
+integrity (identical query text across players within seconds — complements #26), and
+difficulty calibration (which tables players can't figure out). Read-only → also fits the
+Observer role. Players should be told queries are facilitator-visible (expected in training).
 
 ---
 

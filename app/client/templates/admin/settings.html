@@ -1,0 +1,68 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-sliders-h mr-2 text-primary"></i>Game Settings</h1>
+  <a href="/admin" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Admin Central</a>
+</div>
+
+<p class="text-muted">
+  Toggle the optional features below. Changes are saved to the database and <strong>applied immediately —
+  no restart</strong> (these override the defaults in <code>config.py</code>). Secrets like ADX credentials
+  are managed under <a href="/admin/adx_config">ADX Configuration</a>, not here.
+</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show">
+      {{ message }}<button type="button" class="close" data-dismiss="alert">&times;</button>
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<form method="post" action="/admin/settings">
+  <div class="row">
+    {% for group, flags in groups.items() %}
+    <div class="col-lg-6">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">{{ group }}</h6></div>
+        <div class="card-body">
+          {% for f in flags %}
+          <div class="form-group mb-3">
+            {% if f.type == 'bool' %}
+              <div class="custom-control custom-switch">
+                <input type="checkbox" class="custom-control-input" id="{{ f.name }}" name="{{ f.name }}"
+                       {{ 'checked' if values[f.name] else '' }}>
+                <label class="custom-control-label font-weight-bold" for="{{ f.name }}">{{ f.label }}</label>
+              </div>
+            {% elif f.type == 'choice' %}
+              <label class="font-weight-bold mb-1" for="{{ f.name }}">{{ f.label }}</label>
+              <select class="form-control form-control-sm" id="{{ f.name }}" name="{{ f.name }}">
+                {% for opt in f.choices %}
+                <option value="{{ opt }}" {{ 'selected' if values[f.name]|string == opt else '' }}>{{ opt }}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <label class="font-weight-bold mb-1" for="{{ f.name }}">{{ f.label }}</label>
+              <input type="number" class="form-control form-control-sm" id="{{ f.name }}" name="{{ f.name }}"
+                     value="{{ values[f.name] }}"
+                     {% if f.minv is not none %}min="{{ f.minv }}"{% endif %}
+                     {% if f.maxv is not none %}max="{{ f.maxv }}"{% endif %}>
+            {% endif %}
+            {% if f.help %}<small class="form-text text-muted">{{ f.help }}</small>{% endif %}
+            {% if f.note %}<small class="form-text text-warning"><i class="fas fa-exclamation-triangle fa-sm mr-1"></i>{{ f.note }}</small>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="mb-5">
+    <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> Save settings</button>
+    <span class="text-muted ml-2 small">Applied live across the app.</span>
+  </div>
+</form>
+
+{% endblock %}

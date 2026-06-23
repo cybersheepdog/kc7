@@ -13,7 +13,7 @@ from sqlalchemy import asc
 from sqlalchemy.sql.expression import func, select
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
-from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame, UserBadge, NotebookEntry, DecoyIndicator
+from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame, UserBadge, NotebookEntry, DecoyIndicator, QueryLog
 from app.server.modules.audit.audit_log import record_admin_action
 from app.server.modules.organization.Company import Company, Employee
 from app.server.modules.clock.Clock import Clock
@@ -2446,6 +2446,26 @@ def admin_revoke_badge():
 # ---------------------------------------------------------------------------
 # In-app role guides (each covers only what is specific to that role).
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Game Settings — GUI toggles for the opt-in feature flags (DB-backed, live-applied).
+# ---------------------------------------------------------------------------
+@main.route("/admin/settings", methods=["GET", "POST"])
+@roles_required("Admin")
+@login_required
+def admin_settings():
+    from app.server.modules.settings.settings import FLAGS, current_values, apply_from_form
+    if request.method == "POST":
+        changed = apply_from_form(request.form)
+        record_admin_action("settings.update", detail="%d setting(s)" % len(changed))
+        flash("Settings saved and applied — no restart needed.", "success")
+        return redirect(url_for("main.admin_settings"))
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for f in FLAGS:
+        groups.setdefault(f.group, []).append(f)
+    return render_template("admin/settings.html", groups=groups, values=current_values())
+
+
 @main.route("/guide/admin")
 @roles_accepted("Admin")
 @login_required
@@ -2525,6 +2545,121 @@ def notebook_clear():
     NotebookEntry.query.filter_by(user_id=current_user.id).delete()
     db.session.commit()
     return jsonify(ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Embedded KQL console (#52, Phase A) — opt-in, read-only ADX queries in-app.
+# ---------------------------------------------------------------------------
+_LAST_KQL_QUERY = {}
+
+
+@main.route("/kql")
+@login_required
+def kql_console_page():
+    if not current_app.config.get("EMBEDDED_KQL_ENABLED"):
+        flash("The in-app KQL console isn't enabled. Use the Azure Data Explorer portal, "
+              "or ask an admin to enable EMBEDDED_KQL_ENABLED in config.py.", "info")
+        return redirect(url_for("main.home"))
+    return render_template("main/kql_console.html")
+
+
+@main.route("/kql/schema")
+@login_required
+def kql_schema():
+    if not current_app.config.get("EMBEDDED_KQL_ENABLED"):
+        return jsonify(tables=[])
+    try:
+        from app.server.modules.kql.kql_console import get_schema
+        return jsonify(tables=get_schema())
+    except Exception as e:
+        print("kql_schema error:", e)
+        return jsonify(tables=[])
+
+
+@main.route("/kql/history")
+@login_required
+def kql_history():
+    """The current player's own recent distinct successful queries (#52 Phase C re-run)."""
+    if not current_app.config.get("EMBEDDED_KQL_ENABLED"):
+        return jsonify(queries=[])
+    rows = (QueryLog.query.filter_by(user_id=current_user.id, success=True)
+            .order_by(QueryLog.created_at.desc()).limit(60).all())
+    seen, out = set(), []
+    for r in rows:
+        q = (r.query or "").strip()
+        key = q.lower()
+        if q and key not in seen:
+            seen.add(key)
+            out.append(q)
+        if len(out) >= 15:
+            break
+    return jsonify(queries=out)
+
+
+@main.route("/kql/run", methods=["POST"])
+@login_required
+def kql_run():
+    if not current_app.config.get("EMBEDDED_KQL_ENABLED"):
+        return jsonify(ok=False, error="The KQL console is not enabled.")
+    import time as _t
+    rl = int(current_app.config.get("EMBEDDED_KQL_RATE_LIMIT_SECONDS", 2) or 0)
+    if rl > 0:
+        _now = _t.time()
+        if _now - _LAST_KQL_QUERY.get(current_user.id, 0) < rl:
+            return jsonify(ok=False, error="Slow down — wait a moment between queries.")
+        _LAST_KQL_QUERY[current_user.id] = _now
+    query = (request.form.get("query") or "").strip()
+    try:
+        from app.server.modules.kql.kql_console import run_query
+        result = run_query(query)
+    except Exception as e:
+        print("kql_run error:", e)
+        result = {"ok": False, "error": "Query failed: " + str(e)}
+
+    # Log the query for the facilitator live-query view (#52a). Best-effort.
+    try:
+        db.session.add(QueryLog(
+            user_id=current_user.id, username=current_user.username, query=query,
+            success=bool(result.get("ok")), row_count=result.get("row_count"),
+            duration_ms=result.get("duration_ms"), error=result.get("error")))
+        db.session.commit()
+    except Exception as _le:
+        print("query log skipped:", _le)
+
+    return jsonify(result)
+
+
+@main.route("/admin/query_feed")
+@roles_accepted("Admin", "Observer", "Grader")
+@login_required
+def query_feed():
+    """
+    Facilitator live view of player KQL console activity (#52a). Read-only — fits Observer
+    too. `?round=<id>` scopes the feed to that round's participants; `?format=json` returns
+    the same data for the page's auto-refresh poll.
+    """
+    round_arg = (request.args.get("round") or "").strip()
+    selected = int(round_arg) if round_arg.isdigit() else None
+
+    if selected is not None:
+        member_ids = [p.user_id for p in Participation.query.filter_by(round_id=selected).all()]
+        logs_q = QueryLog.query.filter(QueryLog.user_id.in_(member_ids)) if member_ids else None
+    else:
+        logs_q = QueryLog.query
+
+    if logs_q is None:
+        logs = []   # round exists but has no participants
+    else:
+        logs = [q.to_dict() for q in
+                logs_q.order_by(QueryLog.created_at.desc()).limit(150).all()]
+
+    from app.server.modules.kql.query_analysis import summarize_queries
+    summary = summarize_queries(logs)
+    if request.args.get("format") == "json":
+        return jsonify(logs=logs, summary=summary, round=selected)
+    rounds = GameRound.query.order_by(GameRound.name).all()
+    return render_template("admin/query_feed.html", logs=logs, summary=summary,
+                           rounds=rounds, selected_round=selected)
 
 
 @main.route("/admin/game_guide")

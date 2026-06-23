@@ -755,6 +755,69 @@ class GameEvent(AuthBase):
         }
 
 
+class QueryLog(AuthBase):
+    """
+    Records each query a player runs in the embedded KQL console (#52a), so facilitators
+    can watch activity, spot stuck players, and notice possible answer-sharing. Recorded
+    best-effort; side-table that auto-creates and never affects scoring or the query itself.
+    """
+    __tablename__ = "query_logs"
+
+    user_id     = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=True, index=True)
+    username    = db.Column(db.String(50), nullable=True)
+    query       = db.Column(db.Text, nullable=False)
+    success     = db.Column(db.Boolean, nullable=False, default=True)
+    row_count   = db.Column(db.Integer, nullable=True)
+    duration_ms = db.Column(db.Integer, nullable=True)
+    error       = db.Column(db.String(400), nullable=True)
+    created_at  = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, user_id, username, query, success=True, row_count=None,
+                 duration_ms=None, error=None):
+        self.user_id     = user_id
+        self.username    = username
+        self.query       = (query or "")[:5000]
+        self.success     = bool(success)
+        self.row_count   = row_count
+        self.duration_ms = duration_ms
+        self.error       = (error or None) and str(error)[:400]
+        self.created_at  = datetime.datetime.now()
+
+    def to_dict(self):
+        return {
+            "username": self.username, "query": self.query, "success": self.success,
+            "row_count": self.row_count, "duration_ms": self.duration_ms,
+            "error": self.error,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AppSetting(AuthBase):
+    """
+    GUI-managed feature-flag overrides (key/value), applied onto app.config at startup and
+    live on save — so admins can toggle the opt-in flags from /admin/settings without
+    editing config.py or restarting. Side-table; an absent key just means "use the config.py
+    default". See app/server/modules/settings/settings.py for the flag catalog.
+    """
+    __tablename__ = "app_settings"
+
+    key        = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    value      = db.Column(db.String(255), nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+        self.updated_at = datetime.datetime.now()
+
+    def set_value(self, value):
+        self.value = value
+        self.updated_at = datetime.datetime.now()
+
+    def __repr__(self):
+        return '<AppSetting %r=%r>' % (self.key, self.value)
+
+
 ##########################################################
 # ADX connection configuration (singleton, stored in DB)
 ##########################################################

@@ -114,6 +114,9 @@
         board for projecting at the event (also reachable from the "Big screen" button on the leaderboard).
         It shows a <strong>live event ticker</strong> of first-bloods, badges, and rank-ups — see the spoiler
         note in configuration below.</li>
+    <li><a href="/admin/query_feed"><strong>Query Feed</strong></a> 🆕 — when the in-app KQL console is enabled
+        (see configuration), a live view of players' queries with per-player error rates and integrity flags
+        (<em>stuck</em> players and <em>shared</em> queries). Read-only, so Observers see it too.</li>
   </ul>
 </div></div>
 
@@ -137,8 +140,15 @@
      server: <code>python kc7_cli.py validate | preview | generate</code> (use <code>--no-azure</code> for a
      full offline dry-run).</p>
   <p class="mb-1 text-muted small">Optional behaviors (dynamic scoring, live-push scoreboard, campaign mode,
-     infrastructure reuse, per-technique alerts, indicator penalties, real-intel safety toggles) are feature
-     flags in <code>config.py</code> — all off by default. See the README's "Feature flags" table.</p>
+     infrastructure reuse, per-technique alerts, indicator penalties, real-intel safety toggles, the KQL
+     console) are all off by default. Toggle them from <a href="/admin/settings"><strong>Game Settings</strong></a>
+     🆕 — changes save to the database and apply live, no restart (or edit <code>config.py</code> directly).</p>
+  <p class="mb-1 text-muted small"><strong>In-app KQL console (opt-in):</strong> set
+     <code>EMBEDDED_KQL_ENABLED</code> to let players query <code>SecurityLogs</code> from a
+     <a href="/kql">Query Console</a> inside the app instead of the Azure portal. Turn it on only with a
+     dedicated <strong>viewer-only</strong> AAD principal (<code>KQL_VIEWER_CLIENT_ID/SECRET</code>); the
+     backend is read-only (blocks control + cross-database queries, caps rows/time), and you then get the
+     <a href="/admin/query_feed">Query Feed</a> above.</p>
   <p class="mb-0 text-muted small"><strong>Event-ticker spoilers:</strong> the live ticker's
      <code>EVENT_TICKER_REVEAL</code> defaults to <code>standings</code> (spoiler-safe — badges, rank-ups, and a
      generic "first blood!" with no names). Only raise it to <code>category</code> or <code>full</code> if

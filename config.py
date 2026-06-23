@@ -162,6 +162,19 @@ class ProductionConfig(BaseConfig):
     EVENT_TICKER_REVEAL = "standings"        # off | standings | category | full
     EVENT_TICKER_FIRSTBLOOD_AFTER_N = 0
 
+    # --- Embedded KQL console (#52, opt-in) ---
+    # In-app read-only KQL query pane against the ADX SecurityLogs database. OFF by default
+    # (players use the ADX portal as today). Turn on ONLY with a least-privilege, viewer-only
+    # AAD principal configured below (falls back to CLIENT_ID/SECRET if unset). The backend
+    # also rejects control commands + cross-database queries and caps rows/time, but a
+    # viewer-only principal is the primary defense.
+    EMBEDDED_KQL_ENABLED = False
+    EMBEDDED_KQL_MAX_ROWS = 5000             # hard cap on returned rows
+    EMBEDDED_KQL_TIMEOUT_SECONDS = 45        # per-query server timeout
+    EMBEDDED_KQL_RATE_LIMIT_SECONDS = 2      # min seconds between a player's queries
+    KQL_VIEWER_CLIENT_ID = ""                # dedicated read-only principal (recommended)
+    KQL_VIEWER_CLIENT_SECRET = ""
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7

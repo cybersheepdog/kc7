@@ -92,9 +92,11 @@ CLIENT_SECRET    = "your-client-secret"
 
 > GUI settings always take priority over `config.py` values.
 
-### Feature flags (`config.py`) 🆕
+### Feature flags 🆕
 
-Optional behaviors are gated behind flags in `config.py`. **Every one is off / zero by default**, and the code treats a missing flag as off — so leaving them alone preserves the original behavior. They're defined in the `ProductionConfig` class; to enable one, set it there (or in `BaseConfig` to apply to every config). `ADX_DEBUG_MODE` is the exception — it's `True` in `DevelopmentConfig` so a dev run prints data instead of writing to Azure.
+Optional behaviors are **off / zero by default**, so leaving them alone preserves the original behavior. The easiest way to change them is the **Game Settings** admin page 🆕 (`/admin/settings`, Admin Central): grouped toggles and inputs that save to the database and **apply live — no restart**, overriding the `config.py` defaults. (Secrets like ADX credentials stay out of that page — they're under ADX Configuration.)
+
+You can also set them in `config.py` directly: they're defined in the `ProductionConfig` class. Note that the app loads `DevelopmentConfig` by default, so a value set only in `ProductionConfig` won't take effect in a default run — which is exactly the trap the Game Settings page avoids, since DB overrides apply regardless of which config class is active.
 
 | Flag | What it enables | Default |
 |---|---|---|
@@ -105,6 +107,9 @@ Optional behaviors are gated behind flags in `config.py`. **Every one is off / z
 | `MITIGATION_DECOY_PENALTY` | Extra point cost for flagging a known-benign decoy indicator (decoys are recognized + explained regardless) | `0` |
 | `EVENT_TICKER_REVEAL` | Live event ticker reveal level: `off` / `standings` (spoiler-safe) / `category` / `full` | `standings` |
 | `EVENT_TICKER_FIRSTBLOOD_AFTER_N` | Withhold a first-blood challenge/category name until N teams have solved it | `0` |
+| `EMBEDDED_KQL_ENABLED` | In-app read-only KQL query console (`/kql`); off = players use the ADX portal | `False` |
+| `KQL_VIEWER_CLIENT_ID` / `KQL_VIEWER_CLIENT_SECRET` | Dedicated viewer-only AAD principal for the console (recommended) | _(falls back to `CLIENT_ID`/`SECRET`)_ |
+| `EMBEDDED_KQL_MAX_ROWS` / `_TIMEOUT_SECONDS` / `_RATE_LIMIT_SECONDS` | Console row cap, per-query timeout, per-player throttle | `5000` / `45` / `2` |
 | `LEADERBOARD_CACHE_SECONDS` | Cache the computed leaderboard for N seconds | `2` |
 | `LIVE_SCORE_SSE_ENABLED` | Push live scoreboard updates over SSE (`LIVE_SCORE_SSE_POLL_SECONDS` / `_MAX_SECONDS`); falls back to polling | off |
 | `GAME_SCHEDULER_ENABLED` | Background scheduler for auto game start/stop (`GAME_SCHEDULER_INTERVAL_SECONDS`) | off |
@@ -152,6 +157,13 @@ There are **46 badges** out of the box, across these families:
 - **Discretionary** (granted by a facilitator) — MVP, Good sportsmanship, Team player.
 
 The badge **catalog lives in code** (`app/server/modules/badges/badges.py`); only awards are stored, in a `UserBadge` side-table that auto-creates with no migration. Facilitators grant/revoke the discretionary badges from **Admin Central → Badges** (`/admin/badges`), and every manual grant is written to the Audit Log. To add a new badge, drop an SVG in `static/images/badges/` and add one catalog entry with a predicate.
+
+#### In-app KQL Query Console 🆕 (opt-in)
+Instead of bouncing to the Azure Data Explorer portal, players can investigate the `SecurityLogs` data from inside the app: a **Query Console** (`/kql`, in the sidebar) with a KQL editor (Run / Ctrl+Enter), a clickable **tables &amp; columns** sidebar (built from the game's own table schemas — click to insert), schema-based **autocomplete suggestions** (Tab to accept), a **Recent** dropdown that re-runs your past queries, and a results grid where **clicking a cell copies it or saves it straight to your investigation notebook** as an IOC — so query → pivot → stash is one loop. It is **read-only and locked down**: a pure, tested validator blocks control commands (anything starting with `.`, even after a `;`), cross-database `cluster()` / `database()` queries, and `externaldata`; execution goes through the query endpoint with a per-query server timeout, a hard row cap, and a per-player rate limit.
+
+This is **off by default** (`EMBEDDED_KQL_ENABLED`); when off, players use the ADX portal exactly as before. Turn it on only with a **least-privilege, viewer-only AAD principal** configured (`KQL_VIEWER_CLIENT_ID` / `KQL_VIEWER_CLIENT_SECRET`) — that least-privilege identity is the primary safeguard, with the in-app validator and caps as defense in depth.
+
+When the console is enabled, facilitators get a **Query Feed** 🆕 (`/admin/query_feed`, in Admin Central and the Facilitator menu; read-only, so Observers see it too): a live view of who ran what, with per-player volume and error rate, and integrity flags — **stuck** players (high error rate, may need help) and **shared** queries (the same query run by multiple players, a soft answer-sharing signal). It auto-refreshes during an event, and a **round picker** scopes the feed to a single round's participants (`?round=<id>`).
 
 #### Investigation Notebook 🆕
 Every player gets a private **investigation notebook** (`/notebook`, in the sidebar) — the analyst workspace the game was missing. It's a three-pane scratchpad: **Notes** for findings, **Indicators** for stashing IOCs as you pivot (the type — domain / IP / email / hash — is auto-detected and each has a one-click copy button), and a **Timeline** for reconstructing the intrusion (events sort by the time you enter). Add/remove entries inline without leaving the page. It's completely private to each player and has **no effect on scoring** — purely a place to think. Stored in a `notebook_entries` side-table scoped to the user.
@@ -288,6 +300,11 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Particularly useful when running against a pre-existing ADX dataset where the app hasn't generated the game data locally
 - **Decoy (red-herring) indicators** 🆕 — seed known-benign-but-suspicious indicators with a reason; flagging one teaches the player it's benign (see *Mitigations* under For Players)
 
+#### Game Settings (`/admin/settings`) 🆕
+- Toggle the optional feature flags from the GUI instead of editing `config.py` — grouped switches and inputs for scoring (dynamic/first-blood, indicator penalties), realism (campaign mode, infra reuse, technique alerts), live UX (SSE scoreboard, event-ticker reveal level), tools (the in-app KQL console + caps, ADX debug mode), and safety toggles.
+- Saves to the `app_settings` table and **applies immediately — no restart** (overrides are loaded onto the running config and re-applied at boot). Admin-only and audited.
+- Secrets (ADX credentials, the KQL viewer principal) are intentionally **not** exposed here; they stay under ADX Configuration / `config.py`.
+
 #### ADX Configuration (`/admin/adx_config`)
 - Configure Azure Data Explorer connection settings through the GUI
 - **Test Connection** button validates credentials live without leaving the page
@@ -413,6 +430,8 @@ Validation is dependency-free and additive: valid configs behave exactly as befo
 | `notebook_entries` 🆕 | Each player's private investigation notes, IOCs, and timeline events |
 | `decoy_indicators` 🆕 | Admin-seeded benign red-herring indicators (with a reason) for discrimination training |
 | `game_events` 🆕 | Notable moments (first blood / badge / rank-up) for the live event ticker |
+| `query_logs` 🆕 | Player KQL console queries (text, rows, timing, status) for the facilitator query feed |
+| `app_settings` 🆕 | GUI-managed feature-flag overrides (applied live + at startup) |
 | `scheduled_game` 🆕 | Auto start/stop times for unattended events |
 | `game_run_logs` 🆕 | History of each data-generation run (timing, status, per-table row counts) |
 | `admin_audit` 🆕 | Append-only log of privileged admin actions |

@@ -163,6 +163,14 @@ with app.app_context():
     _run_db_migrations()
     _seed_db()
 
+    # Apply any GUI-managed feature-flag overrides onto app.config (no restart needed when
+    # changed later; this just restores saved overrides on boot). Best-effort.
+    try:
+        from app.server.modules.settings.settings import load_overrides_into_config
+        load_overrides_into_config(app)
+    except Exception as _e:
+        print("settings overrides not loaded:", _e)
+
 # Optional background scheduler for unattended game start/stop (#29). Opt-in via
 # GAME_SCHEDULER_ENABLED (default off → no thread runs); acts only on schedules an admin
 # explicitly arms. Guarded so a failure here can't block app startup.

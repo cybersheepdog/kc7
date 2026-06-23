@@ -1,0 +1,102 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-2">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-terminal mr-2 text-primary"></i>Query Feed</h1>
+  <div class="d-flex align-items-center">
+    {% if rounds %}
+    <select id="qf-round" class="form-control form-control-sm mr-2" style="width:auto;"
+            onchange="window.location='/admin/query_feed' + (this.value ? ('?round='+this.value) : '');">
+      <option value="">All players (global)</option>
+      {% for r in rounds %}
+      <option value="{{ r.id }}" {{ 'selected' if selected_round == r.id else '' }}>{{ r.name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    <span id="qf-live" class="badge badge-pill badge-success"><span style="opacity:.7">●</span> LIVE</span>
+  </div>
+</div>
+<p class="text-muted small mb-3">
+  Live view of players' in-app KQL console activity — spot stuck players, teaching moments, and possible
+  answer-sharing. Read-only.
+  {% if selected_round %}<span class="badge badge-info">Scoped to this round's participants</span>{% endif %}
+</p>
+
+<script>var QF_ROUND = {{ selected_round if selected_round else 'null' }};</script>
+
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow mb-4">
+      <div class="card-header py-2"><h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-flag mr-1"></i> Integrity flags</h6></div>
+      <div class="card-body" id="qf-flags"><div class="text-muted small">Loading…</div></div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow mb-4">
+      <div class="card-header py-2"><h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-users mr-1"></i> Players</h6></div>
+      <div class="card-body p-0" id="qf-players"><div class="text-muted small p-3">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-2"><h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-stream mr-1"></i> Recent queries</h6></div>
+  <div class="card-body p-0" id="qf-recent" style="max-height:55vh; overflow:auto;"><div class="text-muted small p-3">Loading…</div></div>
+</div>
+
+<script>
+  function esc(s){ return $('<div>').text(s==null?'':s).html(); }
+  function hhmmss(iso){ try { return new Date(iso).toLocaleTimeString(); } catch(e){ return ''; } }
+
+  function renderFlags(summary){
+    var shared=(summary&&summary.shared)||[], players=(summary&&summary.per_user)||[];
+    var stuck=players.filter(function(p){ return p.stuck; });
+    var h='';
+    if(stuck.length){
+      h+='<div class="mb-2"><span class="badge badge-warning">Stuck</span> high error rate, may need help:<ul class="small mb-1 mt-1">';
+      stuck.forEach(function(p){ h+='<li><strong>'+esc(p.username)+'</strong> — '+p.error_rate+'% errors over '+p.total+' queries</li>'; });
+      h+='</ul></div>';
+    }
+    if(shared.length){
+      h+='<div><span class="badge badge-danger">Shared</span> same query from multiple players:<ul class="small mb-0 mt-1">';
+      shared.slice(0,8).forEach(function(s){
+        h+='<li><code>'+esc(s.query.length>70?s.query.slice(0,70)+'…':s.query)+'</code> &mdash; '+esc(s.users.join(', '))+' ('+s.count+')</li>';
+      });
+      h+='</ul></div>';
+    }
+    $('#qf-flags').html(h || '<div class="text-success small"><i class="fas fa-check mr-1"></i>No flags right now.</div>');
+  }
+
+  function renderPlayers(players){
+    if(!players || !players.length){ $('#qf-players').html('<div class="text-muted small p-3">No console activity yet.</div>'); return; }
+    var h='<table class="table table-sm table-hover mb-0"><thead class="thead-light"><tr><th>Player</th><th class="text-right">Queries</th><th class="text-right">Errors</th><th class="text-right">Error %</th></tr></thead><tbody>';
+    players.forEach(function(p){
+      h+='<tr'+(p.stuck?' class="table-warning"':'')+'><td>'+esc(p.username)+'</td><td class="text-right">'+p.total+'</td><td class="text-right">'+p.errors+'</td><td class="text-right">'+p.error_rate+'%</td></tr>';
+    });
+    $('#qf-players').html(h+'</tbody></table>');
+  }
+
+  function renderRecent(logs){
+    if(!logs || !logs.length){ $('#qf-recent').html('<div class="text-muted small p-3">No queries logged yet.</div>'); return; }
+    var h='<table class="table table-sm table-hover mb-0"><thead class="thead-light"><tr><th>Time</th><th>Player</th><th>Query</th><th class="text-right">Rows</th><th class="text-right">ms</th><th>Status</th></tr></thead><tbody>';
+    logs.forEach(function(l){
+      var q=l.query||''; var short=q.length>90?q.slice(0,90)+'…':q;
+      var status=l.success?'<span class="badge badge-success">ok</span>':'<span class="badge badge-danger" title="'+esc(l.error)+'">error</span>';
+      h+='<tr><td class="small text-muted text-nowrap">'+hhmmss(l.created_at)+'</td><td>'+esc(l.username)+'</td>'
+        +'<td><code class="small" title="'+esc(q)+'">'+esc(short)+'</code></td>'
+        +'<td class="text-right">'+(l.row_count==null?'':l.row_count)+'</td>'
+        +'<td class="text-right">'+(l.duration_ms==null?'':l.duration_ms)+'</td><td>'+status+'</td></tr>';
+    });
+    $('#qf-recent').html(h+'</tbody></table>');
+  }
+
+  function poll(){
+    var url = '/admin/query_feed?format=json' + ((typeof QF_ROUND !== 'undefined' && QF_ROUND) ? ('&round=' + QF_ROUND) : '');
+    $.getJSON(url, function(d){
+      renderFlags(d.summary); renderPlayers(d.summary && d.summary.per_user); renderRecent(d.logs);
+    }).fail(function(){});
+  }
+  $(function(){ poll(); setInterval(poll, 6000); });
+</script>
+
+{% endblock %}

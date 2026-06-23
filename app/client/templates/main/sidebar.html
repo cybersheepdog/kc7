@@ -20,6 +20,14 @@
     </li>
 
     {% if current_user.is_authenticated %}
+    {% if config.EMBEDDED_KQL_ENABLED %}
+    <!-- Nav Item - Query Console (opt-in) -->
+    <li class="nav-item">
+      <a class="nav-link" href="/kql">
+        <i class="fas fa-fw fa-terminal"></i>
+        <span>Query console</span></a>
+    </li>
+    {% endif %}
     <!-- Nav Item - Notebook -->
     <li class="nav-item">
       <a class="nav-link" href="/notebook">
@@ -66,6 +74,7 @@
           <a class="collapse-item" href="/admin/manage_scenario">Manage Scenario</a>
           <a class="collapse-item" href="/admin/teams">Manage Teams</a>
           <a class="collapse-item" href="/admin/users">Manage Users</a>
+          <a class="collapse-item" href="/admin/settings">Game Settings</a>
           <a class="collapse-item" href="/admin/adx_config">ADX Configuration</a>
           <a class="collapse-item" href="/admin/manage_database">Manage ADX Perms</a>
           <a class="collapse-item" href="/admin/manage_challenges">Manage Challenges</a>
@@ -74,6 +83,7 @@
           <a class="collapse-item" href="/admin/live_dashboard">Live Answer Feed</a>
           <a class="collapse-item" href="/admin/analytics">Analytics</a>
           <a class="collapse-item" href="/admin/audit_log">Audit Log</a>
+          {% if config.EMBEDDED_KQL_ENABLED %}<a class="collapse-item" href="/admin/query_feed">Query Feed</a>{% endif %}
           <a class="collapse-item" href="/admin/badges">Badges</a>
           <a class="collapse-item" href="/admin/backup">Backup &amp; Restore</a>
         </div>
@@ -100,6 +110,7 @@
           <a class="collapse-item" href="/admin/live_dashboard">Live Answer Feed</a>
           <a class="collapse-item" href="/admin/run_history">Run History</a>
           <a class="collapse-item" href="/admin/audit_log">Audit Log</a>
+          {% if config.EMBEDDED_KQL_ENABLED %}<a class="collapse-item" href="/admin/query_feed">Query Feed</a>{% endif %}
           {% if current_user.has_role('Grader') %}
           <a class="collapse-item" href="/admin/answer_tester">Answer Tester</a>
           <a class="collapse-item" href="/admin/score_adjust">Adjust Score</a>
