@@ -1,0 +1,82 @@
+# =============================================================================
+# REAL THREAT ACTOR — TEMPLATE (#41 real tooling, #40/#45 attribution metadata)
+# =============================================================================
+# HOW TO USE
+#   1. Copy to a real config:  cp TEMPLATE_real_actor.yaml.example <Group>.yaml
+#      (Only "*.yaml" files are loaded; this ".example" file is ignored by every loader
+#       and the validator, so keep it here as a reference.)
+#   2. Fill in real values. For the FASTEST path, instead of hand-editing this you can
+#      build an actor from an intel pack: Manage Scenario → Import Intel Pack (see
+#      intel_packs/TEMPLATE_real_intel.yaml.example), which maps an ATT&CK group + its
+#      techniques + hashes (with provenance + safety) onto a validated actor config.
+#   3. The actor's `attacks:` must use technique strings the registry knows. To map a
+#      real ATT&CK technique id (e.g. T1558.003) to the game's technique strings, the
+#      intel-pack importer uses the registry reverse lookup automatically.
+#
+# SAFETY: keep C2/infrastructure synthetic unless the ALLOW_REAL_* toggles are set;
+# real indicators are defanged by default. See config.py + modules/safety/safety.py.
+# =============================================================================
+
+name: RealGroup
+effectiveness: 80
+
+# ---- Attribution metadata (#40/#45) — surfaced in attribution challenges + guide ----
+attribution: "RealGroup"
+attack_group_id: "G0000"              # MITRE ATT&CK Group id (G####)
+aliases:
+  - "Alias One"
+  - "Alias Two"
+origin: "Country / sponsor per public reporting"
+motivation: "Espionage | financial | destruction"
+report_url: "https://attack.mitre.org/groups/G0000/"   # primary public reference
+
+# ---- Activity window / cadence ----
+count_init_passive_dns: 10
+max_wave_size: 3
+activity_start_date: "2023-03-05"
+activity_end_date: "2023-04-01"
+activity_start_hour: 3
+workday_length_hours: 8
+working_days:
+  - Sunday
+  - Monday
+  - Tuesday
+  - Wednesday
+  - Thursday
+
+# ---- Techniques this actor performs (must be registry technique strings) ----
+# These drive telemetry generation. Pick the subset that matches the real group's
+# known ATT&CK techniques. (The intel-pack importer can select these for you from the
+# group's technique ids and will note any that the game can't yet generate.)
+attacks:
+  - recon:browsing
+  - email:malware_delivery
+  - identity:kerberoasting
+  - execution:psexec_lateral
+  - evasion:log_clearing
+  - persistence:scheduled_task
+
+spoofs_email: True
+
+# ---- Malware families used by this actor ----
+malware:
+  - realfamily                        # must match a malware config `name:` (see malware/)
+
+# ---- Post-exploitation hands-on-keyboard commands (#41) ---------------------
+# Real operator command lines, sourced from ATT&CK + Atomic Red Team for this group.
+# Required keys: name + process. Use {output_dir} where the operator writes output.
+# OPTIONAL annotation keys (technique, source) document provenance and are ignored by
+# telemetry generation — keep them so the dataset stays auditable.
+post_exploit_commands:
+  - name: cmd.exe
+    process: "cmd.exe /c net group \"Domain Admins\" /domain > {output_dir}/da.txt"
+    technique: T1069.002
+    source: "https://attack.mitre.org/techniques/T1069/002/"
+  - name: powershell.exe
+    process: "powershell.exe -c \"Get-ADComputer -Filter *\" > {output_dir}/hosts.txt"
+    technique: T1018
+    source: "https://github.com/redcanaryco/atomic-red-team/.../T1018.md"
+  - name: cmd.exe
+    process: "cmd.exe /c vssadmin delete shadows /all /quiet"
+    technique: T1490
+    source: "https://attack.mitre.org/techniques/T1490/"

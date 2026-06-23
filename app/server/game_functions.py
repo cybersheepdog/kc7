@@ -571,14 +571,17 @@ def assign_hash_to_malware(malware_objects: "list[Malware]") -> "list[Malware]":
     Take all available VT hashes and assign them to malware families 
     there should be a 1-1 mapping of hash to malware family
     """
-    # Look through available hashes and assign them to malware families via a round robin
-    while FILES_MALICIOUS_VT_SEED_HASHES:
-        for malware_object in malware_objects:
+    # Families that declared their own (real, provenance-tagged) hashes keep them (#42).
+    # Only families with NO declared hashes are topped up from the random seed pool, via
+    # round robin — so existing configs without declared hashes behave exactly as before.
+    needs_hashes = [m for m in malware_objects if not m.hashes]
+    while FILES_MALICIOUS_VT_SEED_HASHES and needs_hashes:
+        for malware_object in needs_hashes:
             if not FILES_MALICIOUS_VT_SEED_HASHES:
                 break
             # take a hash and remove it from our list of hashes
             hash = FILES_MALICIOUS_VT_SEED_HASHES.pop()
-            malware_object.hashes.append(hash) # TODO: This might not work!!
-   
+            malware_object.hashes.append(hash)
+
     return malware_objects
 

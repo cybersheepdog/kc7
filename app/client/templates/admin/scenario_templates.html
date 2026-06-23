@@ -1,0 +1,79 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-layer-group mr-2 text-primary"></i>Scenario Templates
+  </h1>
+  <a href="/admin/manage_scenario" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-drafting-compass mr-1"></i> Manage Scenario
+  </a>
+</div>
+
+<p class="text-muted">
+  Save the current scenario — company profile, actors, malware, realism content pack, and
+  challenges — as a reusable <b>template</b>, then load it later to spin the same scenario
+  back up. Loading writes the config files (validated) and adds the template's challenges;
+  it doesn't start a game or touch live scores, so review and then start when ready.
+</p>
+
+<div class="row">
+  <div class="col-lg-5">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Save current scenario</h6></div>
+      <div class="card-body">
+        <form method="post" action="/admin/save_template" class="form-inline">
+          <input type="text" name="name" class="form-control mr-2 mb-2" placeholder="template name" required>
+          <button type="submit" class="btn btn-primary mb-2"><i class="fas fa-save mr-1"></i> Save as template</button>
+        </form>
+        <hr>
+        <form method="post" action="/admin/upload_template" enctype="multipart/form-data" class="form-inline">
+          <input type="file" name="template_file" accept=".json" class="form-control-file mr-2 mb-2" required>
+          <button type="submit" class="btn btn-outline-secondary btn-sm mb-2"><i class="fas fa-upload mr-1"></i> Import .json</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Library <span class="badge badge-primary">{{ templates|length }}</span></h6></div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="thead-light"><tr><th>Name</th><th>Contents</th><th>Saved</th><th style="width:170px"></th></tr></thead>
+            <tbody>
+              {% for t in templates %}
+              <tr>
+                <td class="font-weight-bold">{{ t.name }}</td>
+                <td class="small text-muted">
+                  {% if t.company %}{{ t.company }} · {% endif %}{{ t.actors }} actor(s), {{ t.malware }} malware,
+                  {{ t.challenges }} challenge(s){% if t.has_content_pack %}, content pack{% endif %}
+                </td>
+                <td class="small text-muted">{{ t.created_at }}</td>
+                <td>
+                  <form method="post" action="/admin/load_template" style="display:inline"
+                        onsubmit="return confirm('Load template \'{{ t.name }}\'? This overwrites the current scenario config files.');">
+                    <input type="hidden" name="name" value="{{ t.name }}">
+                    <button class="btn btn-sm btn-success" title="Load"><i class="fas fa-download"></i></button>
+                  </form>
+                  <a href="/admin/download_template?name={{ t.name }}" class="btn btn-sm btn-outline-secondary" title="Download .json"><i class="fas fa-file-download"></i></a>
+                  <form method="post" action="/admin/delete_template" style="display:inline"
+                        onsubmit="return confirm('Delete template \'{{ t.name }}\'?');">
+                    <input type="hidden" name="name" value="{{ t.name }}">
+                    <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center text-muted py-4">No templates yet — save the current scenario above.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

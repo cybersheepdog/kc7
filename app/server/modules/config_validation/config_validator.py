@@ -63,7 +63,7 @@ _LIST_FIELDS = {
     "file_extensions", "malware", "recon_search_terms", "watering_hole_domains",
     "watering_hole_target_roles", "sender_domains", "working_days",
     "post_exploit_commands", "partners", "filenames", "paths", "recon_processes",
-    "c2_processes", "aliases",
+    "c2_processes", "aliases", "hashes", "references",
 }
 # Attribution fields that should be plain strings when present
 _STRING_FIELDS = {"attribution", "attack_group_id", "origin", "motivation", "report_url"}
@@ -220,7 +220,40 @@ def validate_malware_config(config: dict, source: str = "malware", malware_cls=N
 
     errors = _check_known_and_required(config, malware_cls, "malware")
     errors += _check_types(config)
+    errors += _check_hash_entries(config)
     return [f"{source}: {e}" for e in errors]
+
+
+def _check_hash_entries(config: dict) -> "list[str]":
+    """
+    Structural validation for an optional ``hashes`` list (#42). Each entry must be a
+    plain hash string or a mapping carrying a non-empty ``sha256`` (or ``hash``). Hex
+    length is checked loosely (md5/sha1/sha256). Provenance is recommended but not
+    required here, so existing fictitious configs are never blocked — the intel-pack
+    importer (#43) enforces provenance for real-intel imports.
+    """
+    hashes = config.get("hashes")
+    if not hashes:
+        return []
+    if not isinstance(hashes, list):
+        return []  # type error already reported by _check_types
+    errors = []
+    for i, h in enumerate(hashes):
+        if isinstance(h, str):
+            val = h.strip()
+        elif isinstance(h, dict):
+            val = str(h.get("sha256") or h.get("hash") or "").strip()
+            if not val:
+                errors.append(f"hashes[{i}] mapping is missing a 'sha256' value")
+                continue
+        else:
+            errors.append(f"hashes[{i}] should be a hash string or a mapping with 'sha256', "
+                          f"got {type(h).__name__}")
+            continue
+        hexpart = val.lower()
+        if not all(c in "0123456789abcdef" for c in hexpart) or len(hexpart) not in (32, 40, 64):
+            errors.append(f"hashes[{i}] {val!r} is not a valid md5/sha1/sha256 hex digest")
+    return errors
 
 
 def validate_all_game_configs(

@@ -76,18 +76,32 @@
         btn.prop("disabled", false).html('<i class="fas fa-shield-alt mr-1"></i> Submit Indicators');
 
         if (!data.success) {
-          toastr['error']('Failed to update deny list. Try again.');
-          $("#score-feedback").html('<p class="text-danger">Submission failed. Please try again.</p>');
+          if (data.rate_limited) {
+            toastr['warning'](data.message || 'Please slow down.');
+            $("#score-feedback").html('<p class="text-warning">' + $('<div>').text(data.message || 'Please slow down.').html() + '</p>');
+          } else {
+            toastr['error']('Failed to update deny list. Try again.');
+            $("#score-feedback").html('<p class="text-danger">Submission failed. Please try again.</p>');
+          }
           return;
         }
 
         // Build feedback panel
         var pointsEarned = data.points_earned || 0;
+        var penalty      = data.penalty || 0;
         var totalScore   = data.total_score  || 0;
         var userScore    = data.user_score   || 0;
         var correct      = data.correct_indicators || [];
+        var wrong        = data.wrong_indicators || [];
 
         var html = '';
+
+        if (penalty > 0) {
+          toastr['warning']('-' + penalty + ' points: ' + wrong.length + ' wrong indicator' + (wrong.length === 1 ? '' : 's') + '.');
+          html += '<div class="alert alert-warning py-2"><i class="fas fa-exclamation-triangle mr-1"></i> '
+               +  '<strong>-' + penalty + ' pts</strong> for ' + wrong.length + ' incorrect indicator'
+               +  (wrong.length === 1 ? '' : 's') + '. Submit precisely.</div>';
+        }
 
         if (pointsEarned > 0) {
           toastr['success']('+' + pointsEarned + ' points earned!');

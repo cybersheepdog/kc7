@@ -139,6 +139,12 @@ class ProductionConfig(BaseConfig):
     GAME_SCHEDULER_ENABLED = False
     GAME_SCHEDULER_INTERVAL_SECONDS = 30
 
+    # --- Mitigation (indicator) submission precision (off by default) — #23 ---
+    # Discourage spraying the indicator box. Both default to 0 (no penalty, no limit) so
+    # behavior is unchanged; raise them to add friction for higher-stakes events.
+    MITIGATION_WRONG_PENALTY = 0          # points deducted per WRONG new indicator
+    MITIGATION_RATE_LIMIT_SECONDS = 0     # min seconds between a player's submissions
+
 class ActivityVolumeSettings(BaseConfig):
     ACTOR_SKIPS_DAY_RATE = 0.1
     RATE_USER_AUTHS_FROM_WORK = 0.7

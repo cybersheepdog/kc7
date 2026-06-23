@@ -1,0 +1,86 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+  <h1 class="h3 mb-0 text-gray-800">
+    <i class="fas fa-database mr-2 text-primary"></i>Backup &amp; Restore
+  </h1>
+  <a href="/admin" class="btn btn-sm btn-outline-secondary">
+    <i class="fas fa-arrow-left mr-1"></i> Admin Central
+  </a>
+</div>
+
+<p class="text-muted">
+  Download a single <b>.zip snapshot</b> of this instance &mdash; every scenario config
+  file (actors, malware, company profile, content packs, intel packs, gameplay) plus a copy
+  of the database (users, teams, challenges, scores, solves). Use it for disaster recovery or
+  to move the whole game to another host. Restore re-applies the configs immediately; the
+  database is restored safely on the next restart.
+</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show">
+      {{ message }}
+      <button type="button" class="close" data-dismiss="alert">&times;</button>
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<div class="row">
+
+  <!-- Backup -->
+  <div class="col-lg-5">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Download backup</h6>
+      </div>
+      <div class="card-body">
+        <p class="small text-muted">
+          Creates <code>kc7-backup-&lt;date&gt;.zip</code> containing all configs
+          {% if db_available %}and a copy of the live database{% else %}
+          <span class="text-warning">(no file-based database detected &mdash; configs only)</span>{% endif %}.
+        </p>
+        <a href="/admin/backup/download" class="btn btn-primary btn-block">
+          <i class="fas fa-download mr-1"></i> Download snapshot
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restore -->
+  <div class="col-lg-7">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Restore from backup</h6>
+      </div>
+      <div class="card-body">
+        <form method="post" action="/admin/backup/restore" enctype="multipart/form-data">
+          <div class="form-group">
+            <label for="backup_file" class="font-weight-bold">Backup file (.zip)</label>
+            <input type="file" name="backup_file" id="backup_file" accept=".zip" class="form-control-file" required>
+          </div>
+          <div class="custom-control custom-checkbox mb-3">
+            <input type="checkbox" class="custom-control-input" id="include_db" name="include_db" value="1">
+            <label class="custom-control-label" for="include_db">
+              Also restore the <b>database</b> (staged &mdash; applied on next restart)
+            </label>
+          </div>
+          <div class="alert alert-warning small py-2">
+            <i class="fas fa-exclamation-triangle mr-1"></i>
+            Config files are <b>overwritten immediately</b>. If you tick the database option, the
+            uploaded DB is staged and swapped in when the app restarts &mdash; your current
+            database is automatically copied aside first, so a restore is reversible.
+          </div>
+          <button type="submit" class="btn btn-danger"
+                  onclick="return confirm('Restore from this backup? Config files will be overwritten now.');">
+            <i class="fas fa-upload mr-1"></i> Restore
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

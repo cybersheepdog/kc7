@@ -326,6 +326,15 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
     - **Task queue** (Celery + Redis) so Flask only *starts and monitors* generation
       while a separate worker does the heavy lifting durably. *Larger; do when you
       need concurrent games or crash-resilient long runs.*
+    *Status: 🚧 CLI half (16a) ✅ done; task queue (16b) deferred. `kc7_cli.py` (built on
+    `click`) drives the same pipeline headlessly with three subcommands: `validate` (runs
+    the config validator and exits non-zero on problems — fully offline, drops into CI),
+    `preview` (the #5 dry-run of what the scenario will generate — offline), and `generate`
+    (runs the real `start_game()` inside an app context; `--no-azure` forces
+    `ADX_DEBUG_MODE` so it generates all telemetry without uploading — a complete offline
+    dry-run — while `--azure` forces a real upload, and `--yes` skips the prompt). Prints a
+    per-table row-count summary on completion. The Celery/Redis task queue (16b) remains
+    deferred until concurrent games or crash-resilient long runs are needed.*
 
 17. **Concurrent ADX uploads.** `LogUploader` batches and ingests one table at a time
     (`send_request` → per-table `ingest_from_dataframe` in a loop), so initialization
@@ -334,6 +343,16 @@ All three of these are unlocked by the "engine knows the ground truth" fact abov
     *Caveat:* the singleton `LOG_UPLOADER` queue is shared across every module, so the
     queue and its flush must be made thread-safe and per-table ingestion kept intact.
     *Medium effort; biggest win at high employee/wave counts.*
+    *Status: ✅ Done. `LogUploader` got an `RLock`; `send_request` now enqueues and, when
+    the limit is hit, **atomically swaps the queue out and resets it inside the lock**, then
+    ingests that snapshot **outside** the lock — so writers never block on HTTP and no rows
+    are lost during a flush (a latent bug in the old "iterate-live-queue-then-reset" path).
+    Independent tables are then ingested **concurrently** via a small `ThreadPoolExecutor`
+    (each still its own `ingest_from_dataframe` call), cutting the sequential per-table Azure
+    latency; serial fallback in debug / single-table cases, and the `ADX_DEBUG_MODE` flag is
+    read in the app-context thread before workers spawn (workers never touch `current_app`).
+    `get_queue_length` and a new `row_counts_snapshot()` are lock-guarded for the admin
+    progress poll. Verified lossless under 16k concurrent sends across 8 threads.*
 
 ---
 
@@ -408,6 +427,14 @@ Grounded in the current scoring path (`submit_answer`, `update_deny_list`,
     indicators but never penalizes wrong ones, inviting spraying the indicator box.
     Consider optional small penalties, rate-limiting, or an attempt cap. *Optional;
     penalties can discourage learners — keep configurable.*
+    *Status: ✅ Done (both opt-in, default 0 = unchanged). `MITIGATION_WRONG_PENALTY`
+    deducts points per **wrong new indicator** — computed by a pure, tested
+    `score_submission` helper and applied as a **negative `ScoreAdjustment`**, so it's
+    audited-style recorded and folds into the score-audit rebuild (reconcilable, not a
+    silent deduction); `MITIGATION_RATE_LIMIT_SECONDS` throttles a player's rapid
+    resubmissions (in-memory per-user). Both surface friendly feedback on the Mitigations
+    page ("−N pts for wrong indicators", "slow down — wait Ns"). Kept configurable and off
+    by default so casual events are unaffected.*
 
 ### Scoreboard UX & integrity
 
@@ -584,6 +611,19 @@ score recompute (#20), anti-cheat surfacing (#26).
 35. **Multiple concurrent scenarios.** Today it's effectively one company and one game
     session (`Company.query.first()`, `GameSession` id=1). Support parallel
     events/scenarios plus a scenario template library (save/clone a whole scenario).
+    *Status: 🚧 **scenario template library shipped** (the safe half). A new
+    `modules/scenario_templates/scenario_templates.py` packages a whole scenario — the
+    company profile, every actor & malware config, the realism content pack, and the
+    challenge set — into a single named JSON **bundle**. `/admin/scenario_templates`
+    (linked from Manage Game) lets an admin **save the current scenario** as a template,
+    **load** one back (writes each config through the validator via `scenario_admin`, then
+    adds the challenges — non-destructive to live scores; you review and start when ready),
+    **download/upload** bundles to share them, and delete — all audited (#37). This gives a
+    reusable library to clone scenarios from. The remaining half — true **simultaneous**
+    parallel events with separate datasets — is a larger architectural change (it removes
+    the single-company / single-`GameSession` assumption and needs per-event ADX scoping)
+    and is intentionally deferred; note that **GameRounds** already provide parallel
+    scoped challenge sets + leaderboards for running cohorts in the same dataset.*
 
 36. **Reset / archive / export a game.** One-click reset, archive a finished event, and
     export full game state (scores, solves, configs) for records or replay.
@@ -614,14 +654,26 @@ score recompute (#20), anti-cheat surfacing (#26).
 38. **Access & resilience.** Force-change the default `admin`/`admin` password on first
     login, add finer roles (read-only **facilitator/observer**, **grader**) alongside
     Admin/Player, and provide DB + config backup/restore.
-    *Status: 🚧 Force-change shipped. A `@main.before_request` guard detects when the
-    seeded default admin account is still using the `admin` password (by verifying it — no
-    schema change) and redirects every request to a `/force_password_change` form until a
-    new password (≥8 chars, not "admin") is set; the change is audited (#37) and a session
-    flag short-circuits the check afterward (non-`admin` usernames short-circuit
-    immediately, so players pay no cost). This upgrades the previous soft warning to a hard
-    gate. Remaining (deliberately deferred for risk): finer read-only **observer/grader**
-    roles, and DB/config **backup/restore**.*
+    *Status: ✅ Done (all three).*
+    *(1) Force-change: a `@main.before_request` guard detects when the seeded default admin
+    account is still using the `admin` password (by verifying it — no schema change) and
+    redirects every request to a `/force_password_change` form until a new password (≥8
+    chars, not "admin") is set; audited (#37), with a session flag short-circuiting
+    afterward (non-`admin` usernames short-circuit immediately, so players pay no cost).*
+    *(2) Finer roles: two additive roles are seeded — **Observer** (read-only access to the
+    monitoring views: analytics, live answer feed, run history, audit log) and **Grader**
+    (Observer access plus the grading actions: regrade, score adjust, answer tester) — but
+    NOT game/scenario/config control or backup. Implemented by switching exactly those
+    curated routes from `roles_required("Admin")` to `roles_accepted("Admin", …)`; every
+    other privileged route stays Admin-only, so Admin access is completely unchanged and
+    Players remain locked out. Roles are never auto-assigned (admins grant them in Manage
+    Users), and a dedicated "Facilitator" sidebar surfaces each role's permitted links.
+    Verified with an access-matrix test across all four roles.*
+    *(3) Backup/restore: `/admin/backup` downloads a single `.zip` snapshot of every scenario
+    config plus a copy of the SQLite DB; restore re-applies configs immediately (each path
+    strictly confined to the config root — traversal refused) and optionally **stages** the
+    DB to be swapped in atomically on next startup (the live file is never overwritten under
+    open connections; the current DB is auto-copied aside first). Admin-only and audited.*
 
 ---
 
@@ -669,11 +721,28 @@ infrastructure inert and never ship real malware binaries.
 41. **Real TTP tooling & command lines.** Populate `post_exploit_commands` and the
     malware `recon_processes`/`c2_processes` with the emulated group's real tooling and
     command-line patterns, sourced from ATT&CK and Atomic Red Team.
+    *Status: ✅ Scaffolded — ready to drop real data into. Command-line entries accept
+    optional `technique`/`source` annotation keys (ignored by telemetry, kept for
+    provenance), and fully-commented templates are provided:
+    `actors/TEMPLATE_real_actor.yaml.example` (post-exploit commands annotated with ATT&CK
+    technique ids) and `malware/TEMPLATE_real_family.yaml.example` (recon/C2 commands). The
+    `*.yaml.example` files are ignored by every loader and the validator, so they sit in
+    place as references. Sourcing + safety guide at `app/game_configs/REAL_INTEL_SOURCING.md`.
+    Filling the templates needs the real ATT&CK/Atomic Red Team data (not bundled).*
 
 42. **Real malware families + historical hashes.** Replace fictitious families with real
     ones per actor; seed `malware.hashes` with genuine open-intel sample hashes (they
     flow straight into `get_malicious_indicators()` as correct answers), each with
     provenance. Strings only — never real binaries.
+    *Status: ✅ Scaffolded + plumbed. A malware config may now declare `hashes:` — each
+    entry a bare sha256 or a mapping `{sha256, source, reference, first_seen, family}`;
+    `Malware` parses them into `self.hashes` (telemetry) + `self.hash_provenance`, and
+    `get_implant` falls back to a random sha256 if a family declares none. Declared hashes
+    become that family's indicators; `assign_hash_to_malware` now only tops up families
+    **without** declared hashes from the random pool, so existing configs are unchanged.
+    The validator accepts `hashes`/`references` and structurally checks each digest
+    (md5/sha1/sha256). The intel-pack importer (#43) already enforces provenance. Dropping
+    real hashes needs the open-intel values (abuse.ch) — not bundled.*
 
 ### Sourcing, clustering & scoring
 
@@ -810,8 +879,8 @@ Risk is the chance of disturbing existing behavior.
 ### Phase 5 — Performance & architecture (as scale demands)
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
-| 16a | Generation CLI entrypoint | S–M | Low | Headless, reproducible runs; supports #5 preview |
-| 17 | Concurrent ADX uploads | M | Medium | Make shared queue thread-safe; keep per-table ingestion |
+| 16a | Generation CLI entrypoint | S–M | Low | ✅ Done — `kc7_cli.py` (click): `validate` / `preview` (offline, CI) + `generate` (headless; `--no-azure` = full offline dry-run) |
+| 17 | Concurrent ADX uploads | M | Medium | ✅ Done — RLock + atomic swap-and-flush (lossless); per-table ingest now concurrent |
 | 16b | Task queue (Celery + Redis) | L | Medium | Out-of-process, durable, crash-resilient generation |
 
 > This phase is **demand-driven**, not sequential — pull it forward the moment large
@@ -830,12 +899,12 @@ Risk is the chance of disturbing existing behavior.
 | 25 | Richer visualization | M | Low | ✅ Done — Progress tab (`/score_breakdown`): score-over-time line, category-progress table, first-blood banner + rank-movement deltas on the live board |
 | 26 | Anti-cheat surfacing | M | Low | ✅ Done — `analyze_attempts` flags shared answers / fast copies / burst solving; "Integrity flags" panel on the live feed (advisory, never auto-penalizes) |
 | 22 | First-blood / dynamic scoring | M | Medium | ✅ **Done** — `dynamic_scoring` module; opt-in via `DYNAMIC_SCORING_ENABLED` (off by default), tunable min/decay/first-blood% |
-| 23 | Mitigation submission precision | S | Medium | Optional penalties/rate-limit; keep configurable |
+| 23 | Mitigation submission precision | S | Medium | ✅ Done — opt-in `MITIGATION_WRONG_PENALTY` (reconcilable via ScoreAdjustment) + `MITIGATION_RATE_LIMIT_SECONDS`; both default 0 = unchanged |
 
 ### Phase 7 — Admin & operations (independent track)
 | # | Item | Effort | Risk | Notes |
 |---|------|--------|------|-------|
-| 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | 🚧 Force-change of the default admin password ✅ (`/force_password_change` gate); observer/grader roles + backup/restore deferred |
+| 38 | Ops hardening (default-pw, roles, backup) | S–M | Low | ✅ Done — force-change gate, Observer/Grader roles (curated `roles_accepted`, Admin unchanged), and DB+config backup/restore (`/admin/backup`, staged DB swap) |
 | 37 | Admin-action audit log | S–M | Low | ✅ Done — `AdminAudit` table + guarded `record_admin_action()` wired into game/user/config/challenge routes; read-only `/admin/audit_log` view with category filter |
 | 30 | Manual score adjustments | S | Low | ✅ Done — `/admin/score_adjust` (+/- team/player, reason, audited); folded into score-audit rebuild so `?apply=1` preserves them |
 | 33 | Answer tester | S | Very low | ✅ **Done** — author UI at `/admin/answer_tester` (picker + verdict + per-alternate breakdown) over the existing `/admin/test_answer` `explain_match` API |
@@ -845,7 +914,7 @@ Risk is the chance of disturbing existing behavior.
 | 32 | Hints & challenge gating | M | Low | ✅ Done — side-tables (no migration): point-cost hints, timed unlocks, prerequisite chains; `/admin/challenge_gating` config; enforced in `submit_answer` |
 | 29 | Scheduled game start/stop | S | Low | ✅ Done — opt-in scheduler (`GAME_SCHEDULER_ENABLED`); `/admin/schedule_game` arms auto-start generation / auto-stop scoring; pure `due_actions` tested |
 | 36 | Reset / archive / export game | M | Medium | ✅ Done — reset existed; read-only `/admin/export_game` (JSON/CSV) snapshots standings + solve stats + solve log for records/archive |
-| 35 | Multiple concurrent scenarios | L | Medium | Removes single-company/session assumption |
+| 35 | Multiple concurrent scenarios | L | Medium | 🚧 Scenario **template library** shipped (`/admin/scenario_templates`: save/load/share a whole scenario bundle); true simultaneous parallel events deferred (large refactor) |
 
 ### Phase 8 — Real-world intel & attribution (independent track)
 | # | Item | Effort | Risk | Notes |
@@ -853,8 +922,8 @@ Risk is the chance of disturbing existing behavior.
 | 39 | Inert-indicator safety controls | S | Low | ✅ **Done** — safety toggles (off by default), centralized EICAR invariant + `defang()` + advisory checks |
 | 40 | Actor attribution metadata | S | Low | ✅ **Done** — attribution/aliases/group-id/origin/motivation on actor config; validated; surfaced in preview + instructor-key PDF |
 | 46 | Validator extension (ATT&CK / intel refs) | S | Very low | ✅ Done — technique-id self-check + group-id/report_url format + intel-pack reference resolution (`validate_pack` warns on unimplemented ids, errors when none resolve) |
-| 42 | Real malware families + historical hashes | M | Low | Inert hashes-as-strings only; provenance |
-| 41 | Real TTP tooling & command lines | M | Low | From ATT&CK / Atomic Red Team |
+| 42 | Real malware families + historical hashes | M | Low | ✅ Scaffolded — config `hashes:` (str or provenance mapping) plumbed into telemetry + validator; templates ready, needs abuse.ch data |
+| 41 | Real TTP tooling & command lines | M | Low | ✅ Scaffolded — annotated command-line + actor templates + sourcing guide; needs ATT&CK / Atomic Red Team data |
 | 43 | Intel-pack ingestion (ATT&CK STIX + abuse.ch) | M–L | Low | ✅ Format + importer + admin route + sample pack (provenance-required, defang-safe, validated); live feed-fetch is the follow-up |
 | 44 | Actor-consistent infra reuse (clustering) | M | Medium | ✅ v1: stable per-actor /16 ranges (opt-in `INFRA_REUSE_ENABLED`, collision-safe, fallback-on-error); domains/hashes already consistent. Registrar/cert reuse + ASN challenge are follow-ups |
 | 45 | Attribution scoring mechanic | M | Low | ✅ Done — evidence-grounded auto `Attribution` challenge (accepts name/alias/ATT&CK group id; cites observed techniques + links the referenced report via new `report_url`) |

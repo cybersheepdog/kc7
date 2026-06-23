@@ -104,6 +104,20 @@ def _seed_db():
     else:
         admin_role = Roles.query.first()
 
+    # Finer read-only / grading roles (#38). Additive: created if missing, never
+    # assigned automatically, so existing Admin/Player accounts are unaffected.
+    #   Observer — read-only access to monitoring views (analytics, audit log,
+    #              run history, live answer feed).
+    #   Grader   — Observer access plus grading actions (regrade, score adjust,
+    #              answer tester) but NOT game/scenario/config control.
+    for _rname, _rdesc in (
+        ("Observer", "Read-only access to monitoring dashboards"),
+        ("Grader", "Grading actions plus read-only monitoring"),
+    ):
+        if not Roles.query.filter_by(name=_rname).first():
+            db.session.add(Roles(name=_rname, description=_rdesc))
+    db.session.commit()
+
     # Admin user
     admin_team = db.session.get(Team, 1)
     if not Users.query.first():
@@ -135,6 +149,16 @@ def _seed_db():
 # Build the database, run migrations, and seed initial data — all inside an
 # explicit app context so Flask-SQLAlchemy / Flask-Security work correctly.
 with app.app_context():
+    # If an admin staged a DB restore (#38), swap it in atomically BEFORE any
+    # connection / table creation opens the file. No-op when nothing is staged.
+    try:
+        from app.server.modules.backup.backup import apply_pending_db_restore
+        _restore_msg = apply_pending_db_restore()
+        if _restore_msg:
+            print("DB restore:", _restore_msg)
+    except Exception as _e:
+        print("pending DB restore check skipped:", _e)
+
     db.create_all()
     _run_db_migrations()
     _seed_db()

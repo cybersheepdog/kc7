@@ -42,6 +42,19 @@ python app.py
 
 Then open `http://127.0.0.1:8889/login` and log in with `admin` / `admin`.
 
+### Headless CLI 🆕
+
+For reproducible runs, CI, and scripted scenarios, `kc7_cli.py` drives the same generation pipeline without the web server:
+
+```bash
+python kc7_cli.py validate     # validate every scenario config (offline; exits non-zero on errors — CI-friendly)
+python kc7_cli.py preview      # dry run: what the current scenario will generate (offline)
+python kc7_cli.py generate     # run a full generation headlessly
+python kc7_cli.py generate --no-azure -y   # generate everything WITHOUT uploading to Azure (offline dry-run)
+```
+
+`validate` and `preview` need no Azure or network. `generate` runs the real pipeline and respects `ADX_DEBUG_MODE`; `--no-azure` forces it on (generate all telemetry, upload nothing — a complete offline dry-run), `--azure` forces a real upload, and `-y/--yes` skips the confirmation prompt. On completion it prints a per-table row-count summary.
+
 > **Security note:** Change the default admin password before exposing the app to any network.
 > Set the `KC7_ADMIN_PASSWORD` environment variable before the first run to override the default.
 > If you log in with the default `admin` password, the app now **requires you to set a new one** before you can do anything else 🆕 — so a fresh install can't be left on default credentials by accident.
@@ -86,7 +99,7 @@ CLIENT_SECRET    = "your-client-secret"
 ### For Players
 
 #### Mitigations (Indicator Scoring)
-Players submit malicious indicators — domains, IPs, email addresses, and file hashes — discovered through KQL investigation in ADX. Each correct submission earns points with **time-weighted scoring**: submitting earlier in a session earns more (up to 2× base value in the first 24 hours).
+Players submit malicious indicators — domains, IPs, email addresses, and file hashes — discovered through KQL investigation in ADX. Each correct submission earns points with **time-weighted scoring**: submitting earlier in a session earns more (up to 2× base value in the first 24 hours). For higher-stakes events you can optionally discourage guessing 🆕: set `MITIGATION_WRONG_PENALTY` in `config.py` to deduct points for each wrong indicator (recorded as a reconcilable adjustment), and/or `MITIGATION_RATE_LIMIT_SECONDS` to throttle rapid resubmissions. Both default to 0 (off), so casual play is unaffected.
 
 #### Challenges (Q&A)
 Players answer written questions that test their analysis and knowledge. Challenges are grouped by category and show point value and description. Answers are case-insensitive and support multiple accepted values separated by semicolons.
@@ -144,6 +157,11 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 #### Scenario Story Wizard (`/admin/scenario_wizard`) 🆕
 - The fastest way to stand up a new scenario: pick an **archetype** (espionage, ransomware, insider, or supply-chain), give the actor a name, timeline, and a few optional attribution details, and the wizard scaffolds a **consistent, validated** actor config — with a coherent technique chain and all the fields those techniques require — plus an optional linked malware config.
 - It saves everything through the same config validator as hand-authored configs (so a scaffold can never be invalid), then points you to one-click **auto-generate challenges** and **game guide** to finish the scenario. Linked from the Manage Game tools panel.
+
+#### Scenario Templates (`/admin/scenario_templates`) 🆕
+- Save a whole scenario — the company profile, every actor and malware config, the realism content pack, and the challenge set — as a single named **template** bundle, then load it back later to spin the same scenario up again. Keep a library to clone from.
+- **Load** writes the configs (each through the validator) and adds the challenges; it doesn't start a game or touch live scores, so you review and then start when ready. **Download/upload** bundles as JSON to share scenarios between instances. Every save/load/delete is audited.
+- (This is the "save/clone a whole scenario" half of multi-scenario support. For running parallel cohorts in one dataset, use **Rounds**, which already scope challenges and leaderboards.)
 
 #### Manage Scenario (`/admin/manage_scenario`) 🆕
 - Author the **scenario content** — actor and malware configs — from the browser instead of hand-editing YAML files on disk.
@@ -243,6 +261,18 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - Captures **who** did **what**, to which **target**, with detail, IP, and timestamp — across game start/stop/restart, user create/edit (including role and team changes), scenario config save/delete, intel-pack import, and challenge generate/delete.
 - Read-only view, newest-first, with a category filter (game / user / config / challenge). Logging is best-effort and never blocks the action it records.
 
+#### Facilitator roles: Observer & Grader (`/admin/users`) 🆕
+Besides **Admin** and **Player**, you can grant two narrower roles from Manage Users, so you can give event staff exactly the access they need and nothing more:
+
+- **Observer** — read-only access to the monitoring views (Analytics, Live Answer Feed, Run History, Audit Log). Cannot start/stop the game, change the scenario or config, manage users, grade, or take backups.
+- **Grader** — everything an Observer can see, plus the grading actions: regrade a challenge, adjust a score, and the answer tester. Still cannot touch game/scenario/config control or backups.
+
+Admin keeps full access exactly as before, and Players remain locked out of all admin routes — the new roles only *add* a middle tier (implemented by widening just those specific routes to `roles_accepted`). Roles are never assigned automatically; an Admin grants them. Observer/Grader users get a dedicated **Facilitator** sidebar menu showing only their permitted pages.
+
+#### Backup & Restore (`/admin/backup`) 🆕
+- **Download** a single `.zip` snapshot of the whole instance — every scenario config (actors, malware, company profile, content/intel packs, gameplay) plus a copy of the database (users, teams, challenges, scores, solves). Use it for disaster recovery or to migrate the game to another host.
+- **Restore** from an uploaded snapshot: config files are re-applied immediately (each path strictly confined to the config directory — traversal attempts are refused), and you can optionally restore the **database** too. The DB is never overwritten under live connections — it's *staged* and swapped in atomically on the next restart, and your current database is automatically copied aside first, so a restore is reversible. Admin-only; every download and restore is written to the Audit Log.
+
 #### Adversary Techniques (Actor Configs) 🆕
 Each malicious actor is defined by a YAML file in `app/game_configs/actors/`. The actor's `attacks:` list controls which techniques it carries out during data generation — add or remove a technique string to change what telemetry the scenario produces. No code changes are needed to re-mix techniques across actors.
 
@@ -258,6 +288,8 @@ attacks:
   - persistence:scheduled_task    # 🆕
   - persistence:registry_run      # 🆕
 ```
+
+**Using real adversary data (TTPs & hashes)** 🆕 — the configs ship with fictitious tradecraft, but you can swap in real, historical, open-intel values. A malware config may declare a `hashes:` list (each a bare sha256 or a `{sha256, source, reference, first_seen}` mapping with provenance) that becomes that family's file indicators (correct answers); families that declare none keep using the random pool, so existing scenarios are unchanged. Command-line entries (`recon_processes`, `c2_processes`, `post_exploit_commands`) accept optional `technique`/`source` annotations for provenance. Fully-commented starter templates live alongside the configs — `malware/TEMPLATE_real_family.yaml.example`, `actors/TEMPLATE_real_actor.yaml.example`, and `intel_packs/TEMPLATE_real_intel.yaml.example` (these `.example` files are ignored by the loader). See **`app/game_configs/REAL_INTEL_SOURCING.md`** for where to source the data (MITRE ATT&CK, Atomic Red Team, abuse.ch) and the safety rules (inert strings only, defang). The fastest path is **Import Intel Pack** on Manage Scenario, which maps an ATT&CK group + techniques + hashes onto a validated actor with provenance enforced.
 
 Available techniques, grouped by kill-chain phase, with their MITRE ATT&CK mapping (🆕 = newly added):
 
@@ -339,6 +371,8 @@ When the game runs, it generates realistic security logs and ingests them into A
 | `SecurityAlerts` | Simulated EDR/email alerts, including realistic false positives. Carries structured `hostname`, `username`, and `technique_id` (MITRE ATT&CK) columns alongside the description, so alerts join cleanly to host/identity telemetry and to techniques |
 
 New tables are created automatically on game start (registered in `LogUploader.CUSTOM_TYPES`); no manual ADX schema setup is required.
+
+The uploader batches rows in a shared queue and flushes when it fills. The queue is **thread-safe** 🆕: a flush atomically swaps the queue out under a lock and ingests the snapshot outside it, so generation never blocks on Azure HTTP and no rows are dropped while a flush is in flight. Independent tables in a flush are ingested **concurrently** (each its own ingestion call), so initialization isn't gated by sequential per-table latency — the biggest win at high employee/wave counts. No configuration needed; behavior is automatic.
 
 ---
 

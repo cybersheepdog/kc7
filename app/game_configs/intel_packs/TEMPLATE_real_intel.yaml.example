@@ -1,0 +1,68 @@
+# =============================================================================
+# REAL INTEL PACK — TEMPLATE (#43 importer; the fastest path for #40/#41/#42)
+# =============================================================================
+# An intel pack is a portable bundle that the importer (Manage Scenario → Import
+# Intel Pack) maps onto a VALIDATED actor config: it carries attribution metadata,
+# selects the subset of the group's ATT&CK techniques the game can generate (via the
+# registry reverse lookup), and brings historical hashes/indicators WITH PROVENANCE.
+#
+# HOW TO USE
+#   1. Copy to a real pack:  cp TEMPLATE_real_intel.yaml.example <group>_pack.yaml
+#      (Loaders use "*.yaml"; this ".example" file is ignored, so keep it as a guide.)
+#   2. Fill in real values from the sources below.
+#   3. Import via /admin/import_intel_pack (Preview first, then Import & save). The
+#      importer REQUIRES provenance, defangs indicators unless ALLOW_REAL_INDICATORS is
+#      on, treats hashes as strings only, and runs the config validator before writing.
+#
+# WHERE TO SOURCE EACH FIELD (all open-licensed):
+#   - Group + technique ids + software:  MITRE ATT&CK STIX — Groups G####, Software S####
+#       https://attack.mitre.org/groups/   https://github.com/mitre-attack/attack-stix-data
+#   - Operator command lines per technique:  Atomic Red Team
+#       https://github.com/redcanaryco/atomic-red-team
+#   - Sample hashes + malware family + first-seen:  abuse.ch
+#       MalwareBazaar https://bazaar.abuse.ch/   ThreatFox https://threatfox.abuse.ch/
+#   AVOID hard dependence on licensed feeds (e.g. VirusTotal).
+# =============================================================================
+
+pack_name: "RealGroup emulation pack"
+source: "MITRE ATT&CK G#### + abuse.ch (ThreatFox / MalwareBazaar)"
+provenance_url: "https://attack.mitre.org/groups/G0000/"     # REQUIRED by the importer
+
+actor:
+  name: RealGroupEmu
+  attribution: RealGroup
+  aliases:
+    - "Alias One"
+    - "Alias Two"
+  attack_group_id: G0000
+  origin: "Country / sponsor per public reporting"
+  motivation: Espionage
+  # Real ATT&CK technique ids the group uses. The importer keeps the subset the game
+  # can generate (mapped to its technique strings) and notes the rest.
+  attack_ids:
+    - T1566.001     # spearphishing attachment
+    - T1558.003     # kerberoasting
+    - T1021.002     # SMB/admin shares
+    - T1070.001     # clear windows event logs
+    - T1547.001     # registry run keys
+  activity_start_date: "2023-03-01"
+  activity_end_date: "2023-03-31"
+  activity_start_hour: 9
+  workday_length_hours: 8
+
+# Historical / inert indicators. Defanged on import unless ALLOW_REAL_INDICATORS is on.
+# Keep these synthetic/sinkholed unless you have CONFIRMED they are inert.
+indicators:
+  domains:
+    - real-c2.example.com           # replace with historical, non-resolving/sinkholed
+  ips:
+    - 198.51.100.23                 # use RFC 5737 doc ranges until IOCs confirmed inert
+
+# Malware families — hashes are STRINGS ONLY (never payloads). Provide provenance.
+malware:
+  - name: realfamily
+    source: "abuse.ch MalwareBazaar"
+    reference: "https://bazaar.abuse.ch/browse/signature/RealFamily/"
+    hashes:
+      - "0000000000000000000000000000000000000000000000000000000000000000"
+      - "1111111111111111111111111111111111111111111111111111111111111111"

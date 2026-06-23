@@ -5,7 +5,7 @@ import threading
 import yaml
 from datetime import datetime
 from flask_login import login_required, current_user
-from flask_security import roles_required
+from flask_security import roles_required, roles_accepted
 
 from flask import Blueprint, request, render_template, \
     flash, g, session, redirect, url_for, abort, current_app, jsonify
@@ -282,7 +282,7 @@ def game_status():
     table_counts = {}
     try:
         from app.server.game_functions import LOG_UPLOADER
-        table_counts = dict(LOG_UPLOADER.row_counts)
+        table_counts = LOG_UPLOADER.row_counts_snapshot() if hasattr(LOG_UPLOADER, "row_counts_snapshot") else dict(LOG_UPLOADER.row_counts)
     except Exception:
         table_counts = {}
 
@@ -382,6 +382,11 @@ def get_deny_list():
     return jsonify(current_user.team._mitigations)
 
 
+# Per-user last indicator-submission time, for optional rate-limiting (#23). In-memory
+# (resets on restart) — fine for throttling; the penalty itself is recorded durably.
+_LAST_INDICATOR_SUBMIT = {}
+
+
 @main.route("/updateDenyList", methods=["POST"])
 @login_required
 def update_deny_list():
@@ -401,6 +406,20 @@ def update_deny_list():
                            user_score=current_user.score or 0, correct_indicators=[],
                            timer_expired=True)
 
+        # Optional rate-limit (#23): throttle rapid resubmissions per player. Off by default.
+        _rate = int(current_app.config.get("MITIGATION_RATE_LIMIT_SECONDS", 0) or 0)
+        if _rate > 0:
+            _last = _LAST_INDICATOR_SUBMIT.get(current_user.id)
+            _now0 = datetime.now()
+            if _last and (_now0 - _last).total_seconds() < _rate:
+                wait = max(1, int(_rate - (_now0 - _last).total_seconds()))
+                return jsonify(success=False, points_earned=0, penalty=0,
+                               total_score=current_user.team.score or 0,
+                               user_score=current_user.score or 0, correct_indicators=[],
+                               rate_limited=True,
+                               message="Slow down — wait %d second(s) before submitting again." % wait)
+            _LAST_INDICATOR_SUBMIT[current_user.id] = _now0
+
         newline = chr(10)
         new_indicators = set(x.strip().lower() for x in deny_list.split(newline) if x.strip())
 
@@ -418,10 +437,17 @@ def update_deny_list():
         malicious = get_malicious_indicators()
         malicious_normalized = {normalize_answer(m) for m in malicious}
         correct_new = [ind for ind in newly_added if normalize_answer(ind) in malicious_normalized]
+        wrong_new = [ind for ind in newly_added if normalize_answer(ind) not in malicious_normalized]
 
         game_session = db.session.get(GameSession, 1)
         points_per_correct = calculate_time_weighted_points(POINTS_PER_INDICATOR, game_session)
-        points_earned = len(correct_new) * points_per_correct
+
+        # Optional wrong-indicator penalty (#23): off by default. Computed via a pure helper.
+        from app.server.modules.scoring.mitigation_scoring import score_submission
+        _wrong_penalty_per = int(current_app.config.get("MITIGATION_WRONG_PENALTY", 0) or 0)
+        _sc = score_submission(len(correct_new), len(wrong_new), points_per_correct, _wrong_penalty_per)
+        points_earned = _sc["earned"]
+        penalty = _sc["penalty"]
 
         now = datetime.now()
         if points_earned > 0:
@@ -444,6 +470,22 @@ def update_deny_list():
             print("User " + current_user.username + " +" + str(points_earned) + " pts, "
                   + str(len(correct_new)) + " indicators @ " + str(points_per_correct))
 
+        # Apply the wrong-indicator penalty (#23). Recorded as a negative ScoreAdjustment
+        # so the score audit (#20) folds it into its rebuild — i.e. it's reconcilable, not
+        # a silent deduction. Raw (no floor) so the live score matches the rebuild.
+        if penalty > 0:
+            current_user.score = (current_user.score or 0) - penalty
+            current_user.last_score_time = now
+            if current_user.team:
+                current_user.team.score = (current_user.team.score or 0) - penalty
+                current_user.team.last_score_time = now
+            from app.server.models import ScoreAdjustment
+            db.session.add(ScoreAdjustment(
+                target_type="user", target_id=current_user.id, delta=-penalty,
+                reason="wrong indicator(s): %d" % len(wrong_new), admin_username="system"))
+            print("User " + current_user.username + " -" + str(penalty) + " pts penalty, "
+                  + str(len(wrong_new)) + " wrong indicators")
+
         display_list = [x.strip() for x in deny_list.split(chr(10)) if x.strip()]
         current_user.team._mitigations = json.dumps(display_list)
         db.session.commit()
@@ -451,9 +493,11 @@ def update_deny_list():
         return jsonify(
             success=current_user.team._mitigations,
             points_earned=points_earned,
+            penalty=penalty,
             total_score=current_user.team.score,
             user_score=current_user.score,
             correct_indicators=correct_new,
+            wrong_indicators=wrong_new,
         )
     except Exception as e:
         print(e)
@@ -515,19 +559,20 @@ def edit_user():
             user.set_password(new_pass)
 
         # --- Role toggle ---
-        if new_role in ("Admin", "Player"):
-            admin_role  = Roles.query.filter_by(name="Admin").first()
-            player_role = Roles.query.filter_by(name="Player").first()
-            if new_role == "Admin":
-                if admin_role and admin_role not in user.roles:
-                    user.roles.append(admin_role)
-                if player_role and player_role in user.roles:
-                    user.roles.remove(player_role)
-            else:
-                if player_role and player_role not in user.roles:
-                    user.roles.append(player_role)
-                if admin_role and admin_role in user.roles:
-                    user.roles.remove(admin_role)
+        # A user holds exactly one primary role from this set. Selecting one adds it and
+        # removes any other from the set, so Admin/Player behavior is unchanged and the
+        # finer Observer/Grader roles (#38) slot in the same way.
+        KNOWN_ROLES = ("Admin", "Player", "Observer", "Grader")
+        if new_role in KNOWN_ROLES:
+            for rname in KNOWN_ROLES:
+                r = Roles.query.filter_by(name=rname).first()
+                if not r:
+                    continue
+                if rname == new_role:
+                    if r not in user.roles:
+                        user.roles.append(r)
+                elif r in user.roles:
+                    user.roles.remove(r)
 
         # --- Team assignment ---
         if new_team == "0" or new_team == "":
@@ -541,7 +586,7 @@ def edit_user():
         changes = []
         if new_pass:
             changes.append("password reset")
-        if new_role in ("Admin", "Player"):
+        if new_role in KNOWN_ROLES:
             changes.append(f"role={new_role}")
         changes.append("team=" + (new_team or "none"))
         record_admin_action("user.edit", target=user.username, detail="; ".join(changes))
@@ -1329,7 +1374,7 @@ def edit_challenge():
 
 
 @main.route("/admin/regrade_challenge", methods=["GET", "POST"])
-@roles_required("Admin")
+@roles_accepted("Admin", "Grader")
 @login_required
 def regrade_challenge():
     """
@@ -2103,6 +2148,75 @@ def export_scenario_pdf():
     )
 
 
+# ---------------------------------------------------------------------------
+# Backup & restore (#38): download a DB + config snapshot, or restore one.
+# ---------------------------------------------------------------------------
+@main.route("/admin/backup")
+@roles_required("Admin")
+@login_required
+def backup_page():
+    from app.server.modules.backup.backup import db_file_path
+    db_path = db_file_path()
+    return render_template(
+        "admin/backup.html",
+        db_available=bool(db_path),
+    )
+
+
+@main.route("/admin/backup/download")
+@roles_required("Admin")
+@login_required
+def backup_download():
+    from flask import Response
+    from app.server.modules.backup.backup import build_backup_archive
+    try:
+        data, fname = build_backup_archive()
+    except Exception as e:
+        print("backup_download error: " + str(e))
+        flash("Could not build backup: " + str(e), "error")
+        return redirect(url_for("main.backup_page"))
+    record_admin_action("backup.download", detail="Downloaded DB + config snapshot")
+    return Response(
+        data,
+        mimetype="application/zip",
+        headers={"Content-Disposition": "attachment; filename=" + fname},
+    )
+
+
+@main.route("/admin/backup/restore", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def backup_restore():
+    from app.server.modules.backup.backup import inspect_archive, restore_from_archive
+    upload = request.files.get("backup_file")
+    if not upload or not upload.filename:
+        flash("Choose a backup .zip to restore.", "error")
+        return redirect(url_for("main.backup_page"))
+
+    data = upload.read()
+    info = inspect_archive(data)
+    if not info["ok"]:
+        flash("Not a valid KC7 backup: " + (info["error"] or "unknown error"), "error")
+        return redirect(url_for("main.backup_page"))
+
+    include_db = request.form.get("include_db") in ("1", "true", "on", "yes")
+    result = restore_from_archive(data, include_db=include_db)
+
+    record_admin_action(
+        "backup.restore",
+        detail="configs=%d, db_staged=%s, errors=%d"
+        % (result["restored_configs"], result["db_staged"], len(result["errors"])),
+    )
+
+    if result["errors"]:
+        flash("Restore finished with issues: " + "; ".join(result["errors"][:5]), "warning")
+    msg = "Restored %d config file(s)." % result["restored_configs"]
+    if result["db_staged"]:
+        msg += " Database restore staged — restart the app to apply it (the current DB is backed up automatically on restart)."
+    flash(msg, "success")
+    return redirect(url_for("main.backup_page"))
+
+
 @main.route("/admin/game_guide")
 @roles_required("Admin")
 @login_required
@@ -2230,7 +2344,7 @@ def preview_scenario_route():
 
 
 @main.route("/admin/test_answer")
-@roles_required("Admin")
+@roles_accepted("Admin", "Grader")
 @login_required
 def test_answer():
     """
@@ -2329,7 +2443,7 @@ def score_audit():
 
 @main.route("/admin/score_adjust", methods=["GET"])
 @login_required
-@roles_required("Admin")
+@roles_accepted("Admin", "Grader")
 def score_adjust():
     """Manual score adjustments (#30): +/- points to a team or player, with a reason.
     Recorded so the score audit (#20) folds them into its rebuild; audited (#37)."""
@@ -2342,7 +2456,7 @@ def score_adjust():
 
 @main.route("/admin/adjust_score", methods=["POST"])
 @login_required
-@roles_required("Admin")
+@roles_accepted("Admin", "Grader")
 def adjust_score():
     """Apply a manual score adjustment to a user or team."""
     target_type = request.form.get("target_type")
@@ -2388,7 +2502,7 @@ def adjust_score():
 
 
 @main.route("/admin/run_history")
-@roles_required("Admin")
+@roles_accepted("Admin", "Observer", "Grader")
 @login_required
 def run_history():
     """
@@ -2488,6 +2602,119 @@ def manage_scenario():
         editor = {"kind": kind, "name": "", "content": _scenario_starter(kind)}
 
     return render_template("admin/manage_scenario.html", files=files, editor=editor, errors=[])
+
+
+# ---------------------------------------------------------------------------
+# Scenario template library (#35)
+# ---------------------------------------------------------------------------
+@main.route("/admin/scenario_templates", methods=["GET"])
+@roles_required("Admin")
+@login_required
+def scenario_templates():
+    from app.server.modules.scenario_templates import scenario_templates as st
+    return render_template("admin/scenario_templates.html", templates=st.list_templates())
+
+
+@main.route("/admin/save_template", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def save_template():
+    from app.server.modules.scenario_templates import scenario_templates as st
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        flash("Give the template a name.", "danger")
+        return redirect(url_for("main.scenario_templates"))
+    try:
+        summary = st.capture_current(name)
+        record_admin_action("template.save", target=summary.get("name"),
+                            detail="%d actors, %d malware, %d challenges" % (
+                                summary.get("actors", 0), summary.get("malware", 0),
+                                summary.get("challenges", 0)))
+        flash("Saved template '%s'." % summary.get("name"), "success")
+    except Exception as e:
+        print("save_template error:", e)
+        flash("Could not save template: %s" % e, "danger")
+    return redirect(url_for("main.scenario_templates"))
+
+
+@main.route("/admin/load_template", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def load_template():
+    from app.server.modules.scenario_templates import scenario_templates as st
+    name = (request.form.get("name") or "").strip()
+    try:
+        result = st.apply_template(name, create_challenges=True)
+        record_admin_action("template.load", target=name,
+                            detail="wrote %d file(s), +%d challenge(s)" % (
+                                len(result["written"]), result["challenges_added"]))
+        msg = "Loaded template '%s': wrote %d config(s), added %d challenge(s)." % (
+            name, len(result["written"]), result["challenges_added"])
+        if result["errors"]:
+            msg += " Some items failed: " + "; ".join(result["errors"][:5])
+            flash(msg, "warning")
+        else:
+            flash(msg + " Review configs, then start a game.", "success")
+    except Exception as e:
+        print("load_template error:", e)
+        flash("Could not load template: %s" % e, "danger")
+    return redirect(url_for("main.scenario_templates"))
+
+
+@main.route("/admin/delete_template", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def delete_template():
+    from app.server.modules.scenario_templates import scenario_templates as st
+    name = (request.form.get("name") or "").strip()
+    try:
+        if st.delete_template(name):
+            record_admin_action("template.delete", target=name)
+            flash("Deleted template '%s'." % name, "success")
+        else:
+            flash("Template not found.", "warning")
+    except Exception as e:
+        flash("Delete failed: %s" % e, "danger")
+    return redirect(url_for("main.scenario_templates"))
+
+
+@main.route("/admin/download_template", methods=["GET"])
+@roles_required("Admin")
+@login_required
+def download_template():
+    from flask import Response
+    import json as _json
+    from app.server.modules.scenario_templates import scenario_templates as st
+    name = (request.args.get("name") or "").strip()
+    try:
+        bundle = st.read_template(name)
+    except Exception:
+        flash("Template not found.", "danger")
+        return redirect(url_for("main.scenario_templates"))
+    return Response(_json.dumps(bundle, indent=2), mimetype="application/json",
+                    headers={"Content-Disposition": "attachment; filename=%s.json" % st.safe_template_name(name)})
+
+
+@main.route("/admin/upload_template", methods=["POST"])
+@roles_required("Admin")
+@login_required
+def upload_template():
+    import json as _json
+    from app.server.modules.scenario_templates import scenario_templates as st
+    f = request.files.get("template_file")
+    if not f or not f.filename:
+        flash("No template file selected.", "danger")
+        return redirect(url_for("main.scenario_templates"))
+    try:
+        bundle = _json.loads(f.stream.read().decode("utf-8-sig"))
+        if not isinstance(bundle, dict) or "actors" not in bundle:
+            raise ValueError("not a scenario template bundle")
+        saved = st.save_bundle(bundle)
+        record_admin_action("template.upload", target=saved)
+        flash("Imported template '%s'." % saved, "success")
+    except Exception as e:
+        flash("Could not import template: %s" % e, "danger")
+    return redirect(url_for("main.scenario_templates"))
 
 
 @main.route("/admin/scenario/save", methods=["POST"])
@@ -2946,7 +3173,7 @@ def adx_test():
 
 @main.route("/admin/live_dashboard")
 @login_required
-@roles_required("Admin")
+@roles_accepted("Admin", "Observer", "Grader")
 def live_dashboard():
     """Admin live feed dashboard — shows all challenge submissions in real time."""
     round_list = GameRound.query.order_by(GameRound.name).all()
@@ -2955,7 +3182,7 @@ def live_dashboard():
 
 @main.route("/admin/audit_log")
 @login_required
-@roles_required("Admin")
+@roles_accepted("Admin", "Observer", "Grader")
 def audit_log():
     """Admin-action audit trail (#37): privileged actions for accountability."""
     from app.server.modules.audit.audit_log import recent_actions
@@ -2969,7 +3196,7 @@ def audit_log():
 
 @main.route("/admin/answer_tester")
 @login_required
-@roles_required("Admin")
+@roles_accepted("Admin", "Grader")
 def answer_tester():
     """Author tool (#33): confirm a challenge grades a given answer correctly — including
     normalization (defang/scheme/trailing slash) and ';'-separated alternates — before
@@ -3055,7 +3282,7 @@ def set_gating():
 
 @main.route("/admin/analytics")
 @login_required
-@roles_required("Admin")
+@roles_accepted("Admin", "Observer", "Grader")
 def analytics_dashboard():
     """Facilitator analytics (#34): solve rates, difficulty calibration, engagement,
     and ADX ingestion health — built from the Solve / AnswerAttempt logs."""
@@ -3079,7 +3306,7 @@ def analytics_dashboard():
     ingestion = {"queue": None, "rows": {}, "total_rows": 0, "error": None, "running": False}
     try:
         from app.server.game_functions import LOG_UPLOADER, GAME_PROGRESS
-        rows = dict(getattr(LOG_UPLOADER, "row_counts", {}) or {})
+        rows = LOG_UPLOADER.row_counts_snapshot() if hasattr(LOG_UPLOADER, "row_counts_snapshot") else dict(getattr(LOG_UPLOADER, "row_counts", {}) or {})
         ingestion["rows"] = rows
         ingestion["total_rows"] = sum(rows.values())
         try:
@@ -3096,7 +3323,7 @@ def analytics_dashboard():
 
 @main.route("/admin/live_feed")
 @login_required
-@roles_required("Admin")
+@roles_accepted("Admin", "Observer", "Grader")
 def live_feed():
     """JSON polling endpoint for the live answer feed.
 

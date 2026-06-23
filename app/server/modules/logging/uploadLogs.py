@@ -3,6 +3,8 @@ from inspect import istraceback
 from multiprocessing.dummy import Process
 import pandas as pd
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
 from azure.kusto.data.exceptions import KustoServiceError
 from azure.kusto.data.helpers import dataframe_from_result_table
@@ -87,6 +89,13 @@ class LogUploader():
         self.queue_limit = queue_limit
         # running tally of rows sent per table over this uploader's life (#28 run-history)
         self.row_counts = {}
+        # The singleton uploader's queue is shared across modules and read by the admin
+        # progress poll while the generation thread writes; guard all queue/row-count
+        # mutation so it stays consistent (#17). Reentrant so get_queue_length() can be
+        # called from within send_request's locked section.
+        self._lock = threading.RLock()
+        # cap on concurrent per-table ingestions during a flush
+        self._max_ingest_workers = 4
 
     def create_tables(self, reset: bool = False) -> None:
         """
@@ -184,7 +193,13 @@ class LogUploader():
         Get the number of records stored in the queue
         this does a sum of lengths for lists under each tablename key
         """
-        return sum([len(val) for key, val in self.queue.items()])
+        with self._lock:
+            return sum(len(val) for val in self.queue.values())
+
+    def row_counts_snapshot(self):
+        """Thread-safe copy of the per-table row tally (read by the admin progress poll)."""
+        with self._lock:
+            return dict(self.row_counts)
 
     def send_request(self, data: dict, table_name: str) -> None:
         """
@@ -196,61 +211,58 @@ class LogUploader():
         if isinstance(data, list):
             data = data[0]
 
-        # Add the data to the queue
-        # Data is appended to a list under table_name key in self.queue
-        # e.g. {
-        #    "table_name": [data]
-        # }
-        if table_name in self.queue:
-            self.queue[table_name].append(data)
-        else:
-            self.queue[table_name] = [data]
+        # Enqueue + decide whether to flush, all under the lock (#17). If we're flushing,
+        # atomically SWAP the queue out and reset it inside the lock, then do the slow
+        # Azure ingestion on the snapshot OUTSIDE the lock — so other threads can keep
+        # enqueuing (no rows are lost during a flush, and writers don't block on HTTP).
+        pending = None
+        with self._lock:
+            self.queue.setdefault(table_name, []).append(data)
+            self.row_counts[table_name] = self.row_counts.get(table_name, 0) + 1
+            if sum(len(v) for v in self.queue.values()) > self.queue_limit:
+                pending = self.queue
+                self.queue = {}
 
-        # tally rows per table for run-history / live progress (#28)
-        self.row_counts[table_name] = self.row_counts.get(table_name, 0) + 1
+        if pending:
+            # read the config flag here (in a thread that has the app context) so the
+            # ingestion worker threads — which don't — never touch current_app.
+            debug = bool(current_app.config.get("ADX_DEBUG_MODE"))
+            self._flush(pending, debug)
 
-        # reached the queue limit
-        # submit all existing records and clear the queue
-        if self.get_queue_length() > self.queue_limit:
-            for table_name, data in self.queue.items():
-                self.ingestion_props = IngestionProperties(
-                    database=self.DATABASE,
-                    table=table_name,
-                    data_format=DataFormat.CSV,
-                    report_level=ReportLevel.FailuresAndSuccesses
-                )
+    def _ingest_table(self, table_name, rows, debug):
+        """Build a dataframe for one table and ingest it (one ADX call). Per-table, intact."""
+        try:
+            df = pd.DataFrame(rows)
+            try:
+                df = df.sort_values("timestamp", ascending=True)
+            except Exception as e:
+                print(f"failed to sort rows: {e}")
+            if debug:
+                print(f"[ADX_DEBUG] would upload {df.shape} to table {table_name}")
+                return
+            props = IngestionProperties(
+                database=self.DATABASE, table=table_name,
+                data_format=DataFormat.CSV, report_level=ReportLevel.FailuresAndSuccesses)
+            result = self.ingest.ingest_from_dataframe(df, ingestion_properties=props)
+            print(f"....added {df.shape} to azure for {table_name} table: {result}")
+        except Exception as e:
+            print(f"ingest error for {table_name}: {e}")
 
-                # turn list of rows in a dataframe
-                # TODO: sort by time before uploading -
-                #   need to first standardize time columns accross tables
-                data_table_df = pd.DataFrame(self.queue[table_name])
-                
-                try:
-                    # if possible sort value using the "timestamp" column
-                    data_table_df = data_table_df.sort_values("timestamp", ascending=True)
-                except Exception as e:
-                    print(f"failed to sort rows: {e}")
-
-
-                print(f"uploading data for type {table_name}")
-                print(data_table_df.shape)
-
-                if current_app.config["ADX_DEBUG_MODE"]:
-                    # If ADX_DEBUG_MODE is enabled, print JSON representation of data
-                    # Then, return early to prevent queueing and uploading to ADX
-                    print(f"Uploading to table {table_name}...")
-
-                    # if table_name == "SecurityAlert":
-                    #     print(data_table_df.to_markdown())
-                else:
-                    # submit logs to Kusto
-                    result =  self.ingest.ingest_from_dataframe(
-                        data_table_df, ingestion_properties=self.ingestion_props)
-                    print(result)
-                    print(f"....adding {data_table_df.shape} to azure for {table_name} table")
-
-            # reset the quee
-            self.queue = {}
-        else:
-            pass
-            # print(f"======> Submission queue @ {self.get_queue_length()}")
+    def _flush(self, pending, debug):
+        """
+        Ingest a snapshot of the queue. Independent tables are ingested concurrently with a
+        small thread pool so init isn't gated by sequential per-table Azure latency (#17);
+        each table is still its own ingestion call. Falls back to serial in debug mode.
+        """
+        items = list(pending.items())
+        if not items:
+            return
+        if debug or len(items) == 1:
+            for tname, rows in items:
+                self._ingest_table(tname, rows, debug)
+            return
+        workers = min(self._max_ingest_workers, len(items))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(self._ingest_table, tname, rows, debug) for tname, rows in items]
+            for f in futures:
+                f.result()  # surface any worker exception / wait for completion

@@ -48,6 +48,10 @@
               <td>
                 {% if user.has_role('Admin') %}
                   <span class="badge badge-danger">Admin</span>
+                {% elif user.has_role('Grader') %}
+                  <span class="badge badge-warning">Grader</span>
+                {% elif user.has_role('Observer') %}
+                  <span class="badge badge-info">Observer</span>
                 {% else %}
                   <span class="badge badge-secondary">Player</span>
                 {% endif %}
@@ -107,6 +111,8 @@
               <label class="font-weight-bold small">Role</label>
               <select class="form-control" name="role" id="editUserRole">
                 <option value="Player">Player</option>
+                <option value="Observer">Observer (read-only monitoring)</option>
+                <option value="Grader">Grader (monitoring + grading)</option>
                 <option value="Admin">Admin</option>
               </select>
             </div>
@@ -160,6 +166,8 @@
                 <label class="small font-weight-bold">Role</label>
                 <select class="form-control" name="role">
                   <option value="Player">Player</option>
+                  <option value="Observer">Observer</option>
+                  <option value="Grader">Grader</option>
                   <option value="Admin">Admin</option>
                 </select>
               </div>

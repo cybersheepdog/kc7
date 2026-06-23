@@ -57,6 +57,30 @@
           <a class="collapse-item" href="/admin/live_dashboard">Live Answer Feed</a>
           <a class="collapse-item" href="/admin/analytics">Analytics</a>
           <a class="collapse-item" href="/admin/audit_log">Audit Log</a>
+          <a class="collapse-item" href="/admin/backup">Backup &amp; Restore</a>
+        </div>
+      </div>
+    </li>
+    {% endif %}
+
+    {% if not current_user.has_role('Admin') and (current_user.has_role('Observer') or current_user.has_role('Grader')) %}
+    <!-- Facilitator nav (Observer / Grader) — read-only monitoring, plus grading for Graders -->
+    <li class="nav-item">
+      <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#collapseFacilitator" aria-expanded="true" aria-controls="collapseFacilitator">
+        <i class="fas fa-fw fa-binoculars"></i>
+        <span>Facilitator</span>
+      </a>
+      <div id="collapseFacilitator" class="collapse" aria-labelledby="headingFacilitator" data-parent="#accordionSidebar">
+        <div class="bg-white py-2 collapse-inner rounded">
+          <a class="collapse-item" href="/admin/analytics">Analytics</a>
+          <a class="collapse-item" href="/admin/live_dashboard">Live Answer Feed</a>
+          <a class="collapse-item" href="/admin/run_history">Run History</a>
+          <a class="collapse-item" href="/admin/audit_log">Audit Log</a>
+          {% if current_user.has_role('Grader') %}
+          <a class="collapse-item" href="/admin/answer_tester">Answer Tester</a>
+          <a class="collapse-item" href="/admin/score_adjust">Adjust Score</a>
+          <a class="collapse-item" href="/admin/regrade_challenge">Regrade Challenge</a>
+          {% endif %}
         </div>
       </div>
     </li>
