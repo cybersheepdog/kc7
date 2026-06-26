@@ -3,7 +3,11 @@
 
 <div class="d-sm-flex align-items-center justify-content-between mb-4">
   <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-medal mr-2 text-warning"></i>Badges</h1>
+  {% if current_user.has_role('Admin') %}
   <a href="/admin" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Admin Central</a>
+  {% elif current_user.has_role('Facilitator') %}
+  <a href="/guide/facilitator" class="btn btn-sm btn-outline-secondary"><i class="fas fa-book-open mr-1"></i> Facilitator Guide</a>
+  {% endif %}
 </div>
 
 <p class="text-muted">

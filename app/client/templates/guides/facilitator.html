@@ -1,0 +1,73 @@
+{% extends "main/base.html" %}
+{% block body %}
+
+<div class="d-sm-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-binoculars mr-2 text-success"></i>Facilitator Guide</h1>
+  <span class="badge badge-success p-2">Run rounds &middot; live feeds &middot; badges</span>
+</div>
+
+<div class="alert alert-success">
+  As a <strong>Facilitator</strong> you run live events: start, stop, and schedule the rounds that
+  already exist, watch what players are doing through the <strong>Live Answer Feed</strong> and
+  <strong>Query Feed</strong>, and hand out the discretionary <strong>badges</strong>. You
+  <strong>cannot</strong> create or delete rounds, author challenges or scenarios, manage indicators,
+  edit configuration, or manage users &mdash; those stay with administrators. Your tools are in the
+  <strong>Facilitator</strong> menu in the sidebar, and every badge action is written to the Audit Log.
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+    <i class="fas fa-clock mr-1"></i> Start, stop &amp; schedule rounds</h6></div>
+  <div class="card-body">
+    <p>Open <strong>Manage Rounds</strong> to control any existing round. Use <strong>Timer</strong> to
+       schedule its window &mdash; pick a start time (leave blank to begin now) and either a duration or a
+       specific end time; answers submitted near the start earn up to 2&times; points, and none are accepted
+       after the end. Use <strong>Enable</strong> / <strong>Disable</strong> to turn a round's timer on or off
+       on the fly.</p>
+    <p class="mb-2 text-muted small">You can also download a round's <strong>solve log</strong> and
+       <strong>score summary</strong> as CSV. Creating brand-new rounds and deleting rounds are
+       administrator-only, so you can't accidentally remove a session mid-event.</p>
+    <a href="/admin/rounds" class="btn btn-sm btn-outline-primary">Open Manage Rounds</a>
+  </div>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+    <i class="fas fa-stream mr-1"></i> Watch the live feeds</h6></div>
+  <div class="card-body">
+    <p>The <strong>Live Answer Feed</strong> shows every challenge submission in real time &mdash; who
+       submitted what, whether it was correct, and which round it belongs to &mdash; with anti-cheat flags
+       surfaced as they're detected. The <strong>Query Feed</strong> shows the KQL each player is running, so
+       you can spot who's stuck and notice possible answer-sharing.</p>
+    <p class="mb-2 text-muted small">Both views are read-only and auto-refresh; you can scope them to a single
+       round. The Query Feed appears only when the embedded KQL console is enabled.</p>
+    <a href="/admin/live_dashboard" class="btn btn-sm btn-outline-primary mr-1">Open Live Answer Feed</a>
+    <a href="/admin/query_feed" class="btn btn-sm btn-outline-primary">Open Query Feed</a>
+  </div>
+</div>
+
+<div class="card shadow mb-4">
+  <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">
+    <i class="fas fa-medal mr-1"></i> Award badges</h6></div>
+  <div class="card-body">
+    <p>Most badges are earned automatically as players solve challenges and find indicators. On the
+       <strong>Badges</strong> page you grant the <strong>discretionary</strong> ones &mdash; MVP,
+       sportsmanship, team player &mdash; by hand, and revoke one if it was given by mistake.</p>
+    <p class="mb-2 text-muted small">Every grant and revoke is written to the Audit Log, so nothing here is
+       silent.</p>
+    <a href="/admin/badges" class="btn btn-sm btn-outline-primary">Open Badges</a>
+  </div>
+</div>
+
+<div class="card shadow mb-4 border-left-success">
+  <div class="card-body">
+    <strong>Running a smooth event:</strong>
+    <ul class="mb-0 mt-2">
+      <li>Schedule each round's window ahead of time, then just <strong>Enable</strong> it when you're ready to start.</li>
+      <li>Keep the <strong>Live Answer Feed</strong> open during play to catch stuck teams and anti-cheat flags early.</li>
+      <li>Save badges for the end, and always write a clear reason in chat &mdash; the grant itself is audit-logged.</li>
+    </ul>
+  </div>
+</div>
+
+{% endblock %}

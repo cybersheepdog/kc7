@@ -91,8 +91,8 @@
     </li>
     {% endif %}
 
-    {% if not current_user.has_role('Admin') and (current_user.has_role('Observer') or current_user.has_role('Grader')) %}
-    <!-- Facilitator nav (Observer / Grader) — read-only monitoring, plus grading for Graders -->
+    {% if not current_user.has_role('Admin') and (current_user.has_role('Observer') or current_user.has_role('Grader') or current_user.has_role('Facilitator')) %}
+    <!-- Facilitator nav — round control (Facilitator), read-only monitoring (all), plus grading for Graders -->
     <li class="nav-item">
       <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#collapseFacilitator" aria-expanded="true" aria-controls="collapseFacilitator">
         <i class="fas fa-fw fa-binoculars"></i>
@@ -102,15 +102,27 @@
         <div class="bg-white py-2 collapse-inner rounded">
           {% if current_user.has_role('Grader') %}
           <a class="collapse-item font-weight-bold" href="/guide/grader"><i class="fas fa-book-open fa-sm mr-1"></i>Grader Guide</a>
+          {% elif current_user.has_role('Facilitator') %}
+          <a class="collapse-item font-weight-bold" href="/guide/facilitator"><i class="fas fa-book-open fa-sm mr-1"></i>Facilitator Guide</a>
           {% else %}
           <a class="collapse-item font-weight-bold" href="/guide/observer"><i class="fas fa-book-open fa-sm mr-1"></i>Observer Guide</a>
           {% endif %}
           <div class="dropdown-divider"></div>
+          {% if current_user.has_role('Facilitator') %}
+          <a class="collapse-item" href="/admin/rounds">Manage Rounds</a>
+          {% endif %}
+          {% if current_user.has_role('Observer') or current_user.has_role('Grader') %}
           <a class="collapse-item" href="/admin/analytics">Analytics</a>
+          {% endif %}
           <a class="collapse-item" href="/admin/live_dashboard">Live Answer Feed</a>
+          {% if current_user.has_role('Observer') or current_user.has_role('Grader') %}
           <a class="collapse-item" href="/admin/run_history">Run History</a>
           <a class="collapse-item" href="/admin/audit_log">Audit Log</a>
+          {% endif %}
           {% if config.EMBEDDED_KQL_ENABLED %}<a class="collapse-item" href="/admin/query_feed">Query Feed</a>{% endif %}
+          {% if current_user.has_role('Facilitator') %}
+          <a class="collapse-item" href="/admin/badges">Badges</a>
+          {% endif %}
           {% if current_user.has_role('Grader') %}
           <a class="collapse-item" href="/admin/answer_tester">Answer Tester</a>
           <a class="collapse-item" href="/admin/score_adjust">Adjust Score</a>

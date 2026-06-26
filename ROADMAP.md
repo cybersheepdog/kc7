@@ -660,15 +660,18 @@ score recompute (#20), anti-cheat surfacing (#26).
     redirects every request to a `/force_password_change` form until a new password (≥8
     chars, not "admin") is set; audited (#37), with a session flag short-circuiting
     afterward (non-`admin` usernames short-circuit immediately, so players pay no cost).*
-    *(2) Finer roles: two additive roles are seeded — **Observer** (read-only access to the
-    monitoring views: analytics, live answer feed, run history, audit log) and **Grader**
-    (Observer access plus the grading actions: regrade, score adjust, answer tester) — but
-    NOT game/scenario/config control or backup. Implemented by switching exactly those
+    *(2) Finer roles: three additive roles are seeded — **Observer** (read-only access to the
+    monitoring views: analytics, live answer feed, run history, audit log), **Grader**
+    (Observer access plus the grading actions: regrade, score adjust, answer tester), and
+    **Facilitator** (start/stop/schedule **existing** rounds via their timer + round CSV
+    exports, the live answer & query feeds, and badge award/revoke) — but NOT
+    game/scenario/config control, content creation, round create/delete, or backup.
+    Implemented by switching exactly those
     curated routes from `roles_required("Admin")` to `roles_accepted("Admin", …)`; every
     other privileged route stays Admin-only, so Admin access is completely unchanged and
-    Players remain locked out. Roles are never auto-assigned (admins grant them in Manage
-    Users), and a dedicated "Facilitator" sidebar surfaces each role's permitted links.
-    Verified with an access-matrix test across all four roles.*
+    Players remain locked out. Roles are mutually exclusive and never auto-assigned (admins
+    grant them in Manage Users), and a dedicated "Facilitator" sidebar surfaces each role's
+    permitted links. Each non-player role also has an in-app guide (`/guide/facilitator`, etc.).*
     *(3) Backup/restore: `/admin/backup` downloads a single `.zip` snapshot of every scenario
     config plus a copy of the SQLite DB; restore re-applies configs immediately (each path
     strictly confined to the config root — traversal refused) and optionally **stages** the

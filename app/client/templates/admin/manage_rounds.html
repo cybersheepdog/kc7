@@ -91,7 +91,8 @@
                       {% if r.uses_timer %}<i class="fas fa-pause"></i> Disable{% else %}<i class="fas fa-play"></i> Enable{% endif %}
                     </button>
                   </form>
-                  <!-- Delete -->
+                  <!-- Delete (Admin only) -->
+                  {% if current_user.has_role('Admin') %}
                   <form action="/admin/rounds/delete" method="post" class="d-inline">
                     <input type="hidden" name="round_id" value="{{ r.id }}">
                     <button type="submit" class="btn btn-sm btn-danger"
@@ -99,6 +100,7 @@
                       <i class="fas fa-trash"></i>
                     </button>
                   </form>
+                  {% endif %}
                 </div>
               </td>
             </tr>
@@ -107,12 +109,13 @@
         </table>
       </div>
       {% else %}
-      <p class="text-muted mb-0">No rounds yet. Create one below.</p>
+      <p class="text-muted mb-0">No rounds yet.{% if current_user.has_role('Admin') %} Create one below.{% else %} Ask an administrator to create one.{% endif %}</p>
       {% endif %}
     </div>
   </div>
 
-  <!-- Create Round -->
+  <!-- Create Round (Admin only) -->
+  {% if current_user.has_role('Admin') %}
   <div class="card shadow mb-4">
     <div class="card-header py-3">
       <h6 class="m-0 font-weight-bold text-primary">Create New Round</h6>
@@ -140,6 +143,7 @@
       </form>
     </div>
   </div>
+  {% endif %}
 
   <!-- Timer Modal -->
   <div class="modal fade" id="timerModal" tabindex="-1" role="dialog" aria-labelledby="timerModalLabel" aria-hidden="true">

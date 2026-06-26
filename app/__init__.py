@@ -110,9 +110,14 @@ def _seed_db():
     #              run history, live answer feed).
     #   Grader   — Observer access plus grading actions (regrade, score adjust,
     #              answer tester) but NOT game/scenario/config control.
+    #   Facilitator — runs existing rounds (start/stop/schedule their timers),
+    #              watches the live answer & query feeds, and awards/revokes
+    #              badges. NO content creation (challenges, scenario, indicators),
+    #              and CANNOT create brand-new rounds.
     for _rname, _rdesc in (
         ("Observer", "Read-only access to monitoring dashboards"),
         ("Grader", "Grading actions plus read-only monitoring"),
+        ("Facilitator", "Run existing rounds, watch live feeds, award badges"),
     ):
         if not Roles.query.filter_by(name=_rname).first():
             db.session.add(Roles(name=_rname, description=_rdesc))

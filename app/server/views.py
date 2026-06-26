@@ -664,8 +664,9 @@ def edit_user():
         # --- Role toggle ---
         # A user holds exactly one primary role from this set. Selecting one adds it and
         # removes any other from the set, so Admin/Player behavior is unchanged and the
-        # finer Observer/Grader roles (#38) slot in the same way.
-        KNOWN_ROLES = ("Admin", "Player", "Observer", "Grader")
+        # finer Observer/Grader roles (#38) slot in the same way. Facilitator
+        # (round control + live feeds + badges) is likewise mutually exclusive.
+        KNOWN_ROLES = ("Admin", "Player", "Observer", "Grader", "Facilitator")
         if new_role in KNOWN_ROLES:
             for rname in KNOWN_ROLES:
                 r = Roles.query.filter_by(name=rname).first()
@@ -2019,7 +2020,7 @@ def profile(username):
 # ---------------------------------------------------------------------------
 
 @main.route("/admin/rounds")
-@roles_required("Admin")
+@roles_accepted("Admin", "Facilitator")
 @login_required
 def manage_rounds():
     """Admin: list and manage all game rounds."""
@@ -2073,7 +2074,7 @@ def delete_round():
 
 
 @main.route("/admin/rounds/<int:round_id>/set_timer", methods=["POST"])
-@roles_required("Admin")
+@roles_accepted("Admin", "Facilitator")
 @login_required
 def set_round_timer(round_id):
     """Admin: set end time on a specific game round and enable its timer."""
@@ -2100,7 +2101,7 @@ def set_round_timer(round_id):
 
 
 @main.route("/admin/rounds/<int:round_id>/toggle_timer", methods=["POST"])
-@roles_required("Admin")
+@roles_accepted("Admin", "Facilitator")
 @login_required
 def toggle_round_timer(round_id):
     """Admin: enable or disable the timer for a specific game round."""
@@ -2181,7 +2182,7 @@ def export_teams_csv():
 
 
 @main.route("/admin/export/round/<int:round_id>/results")
-@roles_required("Admin")
+@roles_accepted("Admin", "Facilitator")
 @login_required
 def export_round_results_csv(round_id):
     """Download per-round solve log as a CSV."""
@@ -2219,7 +2220,7 @@ def export_round_results_csv(round_id):
 
 
 @main.route("/admin/export/round/<int:round_id>/scores")
-@roles_required("Admin")
+@roles_accepted("Admin", "Facilitator")
 @login_required
 def export_round_scores_csv(round_id):
     """Download per-round player score summary as a CSV."""
@@ -2394,7 +2395,7 @@ def player_badges(username):
 
 
 @main.route("/admin/badges", methods=["GET"])
-@roles_required("Admin")
+@roles_accepted("Admin", "Facilitator")
 @login_required
 def admin_badges():
     """Facilitator view: each player's badge count, with controls to grant/revoke manual badges."""
@@ -2411,7 +2412,7 @@ def admin_badges():
 
 
 @main.route("/admin/badges/award", methods=["POST"])
-@roles_required("Admin")
+@roles_accepted("Admin", "Facilitator")
 @login_required
 def admin_award_badge():
     from app.server.modules.badges.badges import award_manual, BADGES_BY_SLUG
@@ -2427,7 +2428,7 @@ def admin_award_badge():
 
 
 @main.route("/admin/badges/revoke", methods=["POST"])
-@roles_required("Admin")
+@roles_accepted("Admin", "Facilitator")
 @login_required
 def admin_revoke_badge():
     from app.server.modules.badges.badges import revoke_badge, BADGES_BY_SLUG
@@ -2485,6 +2486,13 @@ def guide_observer():
 @login_required
 def guide_grader():
     return render_template("guides/grader.html")
+
+
+@main.route("/guide/facilitator")
+@roles_accepted("Admin", "Facilitator")
+@login_required
+def guide_facilitator():
+    return render_template("guides/facilitator.html")
 
 
 # ---------------------------------------------------------------------------
@@ -2630,7 +2638,7 @@ def kql_run():
 
 
 @main.route("/admin/query_feed")
-@roles_accepted("Admin", "Observer", "Grader")
+@roles_accepted("Admin", "Observer", "Grader", "Facilitator")
 @login_required
 def query_feed():
     """
@@ -3665,7 +3673,7 @@ def adx_test():
 
 @main.route("/admin/live_dashboard")
 @login_required
-@roles_accepted("Admin", "Observer", "Grader")
+@roles_accepted("Admin", "Observer", "Grader", "Facilitator")
 def live_dashboard():
     """Admin live feed dashboard — shows all challenge submissions in real time."""
     round_list = GameRound.query.order_by(GameRound.name).all()
@@ -3815,7 +3823,7 @@ def analytics_dashboard():
 
 @main.route("/admin/live_feed")
 @login_required
-@roles_accepted("Admin", "Observer", "Grader")
+@roles_accepted("Admin", "Observer", "Grader", "Facilitator")
 def live_feed():
     """JSON polling endpoint for the live answer feed.
 

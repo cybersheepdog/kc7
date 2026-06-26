@@ -52,6 +52,8 @@
                   <span class="badge badge-warning">Grader</span>
                 {% elif user.has_role('Observer') %}
                   <span class="badge badge-info">Observer</span>
+                {% elif user.has_role('Facilitator') %}
+                  <span class="badge badge-success">Facilitator</span>
                 {% else %}
                   <span class="badge badge-secondary">Player</span>
                 {% endif %}
@@ -64,7 +66,7 @@
                         data-toggle="modal" data-target="#editUserModal"
                         data-user-id="{{ user.id }}"
                         data-username="{{ user.username }}"
-                        data-role="{{ 'Admin' if user.has_role('Admin') else 'Player' }}"
+                        data-role="{{ 'Admin' if user.has_role('Admin') else 'Grader' if user.has_role('Grader') else 'Observer' if user.has_role('Observer') else 'Facilitator' if user.has_role('Facilitator') else 'Player' }}"
                         data-team-id="{{ user.team_id or 0 }}">
                   <i class="fas fa-edit"></i> Edit
                 </button>
@@ -113,6 +115,7 @@
                 <option value="Player">Player</option>
                 <option value="Observer">Observer (read-only monitoring)</option>
                 <option value="Grader">Grader (monitoring + grading)</option>
+                <option value="Facilitator">Facilitator (run rounds, feeds, badges)</option>
                 <option value="Admin">Admin</option>
               </select>
             </div>
@@ -168,6 +171,7 @@
                   <option value="Player">Player</option>
                   <option value="Observer">Observer</option>
                   <option value="Grader">Grader</option>
+                  <option value="Facilitator">Facilitator</option>
                   <option value="Admin">Admin</option>
                 </select>
               </div>

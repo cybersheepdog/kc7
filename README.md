@@ -337,15 +337,16 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 - See every player's badge count, and grant or revoke the **discretionary** badges (MVP, Good sportsmanship, Team player) by hand — the rest are earned automatically as players solve challenges and find indicators.
 - Each grant/revoke is written to the Audit Log. Player names link to their public badge showcase. See **Achievement badges** under *For Players* for the full catalog.
 
-#### Facilitator roles: Observer & Grader (`/admin/users`) 🆕
-Besides **Admin** and **Player**, you can grant two narrower roles from Manage Users, so you can give event staff exactly the access they need and nothing more:
+#### Facilitator roles: Observer, Grader & Facilitator (`/admin/users`) 🆕
+Besides **Admin** and **Player**, you can grant three narrower roles from Manage Users, so you can give event staff exactly the access they need and nothing more:
 
 - **Observer** — read-only access to the monitoring views (Analytics, Live Answer Feed, Run History, Audit Log). Cannot start/stop the game, change the scenario or config, manage users, grade, or take backups.
 - **Grader** — everything an Observer can see, plus the grading actions: regrade a challenge, adjust a score, and the answer tester. Still cannot touch game/scenario/config control or backups.
+- **Facilitator** — runs live events: start, stop, and schedule **existing** rounds (set each round's timer window and enable/disable it, plus download its solve-log/score CSVs), watch the **Live Answer Feed** and **Query Feed**, and award/revoke the discretionary **badges**. Cannot create or delete rounds, author challenges or scenarios, manage indicators, edit config, or manage users.
 
-Admin keeps full access exactly as before, and Players remain locked out of all admin routes — the new roles only *add* a middle tier (implemented by widening just those specific routes to `roles_accepted`). Roles are never assigned automatically; an Admin grants them. Observer/Grader users get a dedicated **Facilitator** sidebar menu showing only their permitted pages.
+Admin keeps full access exactly as before, and Players remain locked out of all admin routes — the new roles only *add* a middle tier (implemented by widening just those specific routes to `roles_accepted`). Roles are never assigned automatically; an Admin grants them, and each user holds exactly one. Observer/Grader/Facilitator users get a dedicated **Facilitator** sidebar menu showing only their permitted pages.
 
-**In-app role guides** 🆕 — each non-player role has a built-in guide that covers only what's specific to that role, linked from the top of its sidebar menu: Admin (`/guide/admin`), Observer (`/guide/observer`), and Grader (`/guide/grader`).
+**In-app role guides** 🆕 — each non-player role has a built-in guide that covers only what's specific to that role, linked from the top of its sidebar menu: Admin (`/guide/admin`), Observer (`/guide/observer`), Grader (`/guide/grader`), and Facilitator (`/guide/facilitator`).
 
 #### Backup & Restore (`/admin/backup`) 🆕
 - **Download** a single `.zip` snapshot of the whole instance — every scenario config (actors, malware, company profile, content/intel packs, gameplay) plus a copy of the database (users, teams, challenges, scores, solves). Use it for disaster recovery or to migrate the game to another host.
