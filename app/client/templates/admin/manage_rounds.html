@@ -58,6 +58,28 @@
                 {% else %}
                   <span class="text-muted">—</span>
                 {% endif %}
+                {% set scheds = schedules_by_round.get(r.id) %}
+                {% if scheds %}
+                <div class="mt-2 border-top pt-1">
+                  <div class="text-uppercase text-muted" style="font-size:.65rem;letter-spacing:.5px;">Live / scheduled overrides</div>
+                  {% for s in scheds %}
+                  <div class="d-flex align-items-center mt-1" style="gap:6px;">
+                    <span class="badge badge-{{ 'success' if s.status == 'live' else 'warning' if s.status == 'pending' else 'secondary' }}">
+                      {% if s.is_everyone %}<i class="fas fa-globe mr-1"></i>{% else %}<i class="fas fa-user mr-1"></i>{% endif %}{{ s.username }}
+                    </span>
+                    <span class="text-{{ 'success' if s.status == 'live' else 'warning' if s.status == 'pending' else 'muted' }}">{{ s.status }}</span>
+                    <span class="text-muted">
+                      {{ s.start.strftime('%m/%d %H:%M') if s.start else 'now' }} &rarr; {{ s.end.strftime('%m/%d %H:%M') if s.end else '∞' }}
+                    </span>
+                    <form action="/admin/rounds/{{ r.id }}/schedule/clear" method="post" class="d-inline ml-auto">
+                      <input type="hidden" name="schedule_id" value="{{ s.id }}">
+                      <button type="submit" class="btn btn-link btn-sm p-0 text-danger" title="Clear this override"
+                              onclick="return confirm('Clear this override?')"><i class="fas fa-times"></i></button>
+                    </form>
+                  </div>
+                  {% endfor %}
+                </div>
+                {% endif %}
               </td>
               <td>
                 <div class="d-flex flex-wrap" style="gap:4px;">
@@ -83,6 +105,13 @@
                           data-start-time="{{ r.start_time.strftime('%Y-%m-%dT%H:%M') if r.start_time else '' }}"
                           data-end-time="{{ r.end_time.strftime('%Y-%m-%dT%H:%M') if r.end_time else '' }}">
                     <i class="fas fa-clock"></i> Timer
+                  </button>
+                  <!-- Set live / schedule (everyone or a specific user) -->
+                  <button class="btn btn-sm btn-info"
+                          data-toggle="modal" data-target="#scheduleModal"
+                          data-round-id="{{ r.id }}"
+                          data-round-name="{{ r.name }}">
+                    <i class="fas fa-broadcast-tower"></i> Live / Schedule
                   </button>
                   <!-- Toggle timer -->
                   <form action="/admin/rounds/{{ r.id }}/toggle_timer" method="post" class="d-inline">
@@ -216,6 +245,135 @@
       </div>
     </div>
   </div>
+
+  <!-- Live / Schedule Modal -->
+  <div class="modal fade" id="scheduleModal" tabindex="-1" role="dialog" aria-labelledby="scheduleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <form id="scheduleForm" action="" method="post">
+          <div class="modal-header">
+            <h5 class="modal-title" id="scheduleModalLabel"><i class="fas fa-broadcast-tower mr-2"></i>Set Live / Schedule</h5>
+            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small mb-3" id="schedule-round-name"></p>
+
+            <!-- Audience -->
+            <div class="form-group">
+              <label class="d-block font-weight-bold small">Who is this for?</label>
+              <div class="btn-group btn-group-sm w-100" role="group">
+                <label class="btn btn-outline-primary active mb-0">
+                  <input type="radio" name="audience" value="everyone" autocomplete="off" checked hidden>
+                  <i class="fas fa-globe mr-1"></i> Everyone
+                </label>
+                <label class="btn btn-outline-primary mb-0">
+                  <input type="radio" name="audience" value="user" autocomplete="off" hidden>
+                  <i class="fas fa-user mr-1"></i> Specific user
+                </label>
+              </div>
+            </div>
+
+            <!-- Specific user select -->
+            <div class="form-group" id="schedule-user-section" style="display:none;">
+              <label class="small">User</label>
+              <select class="form-control" name="user_id" id="schedule-user-select">
+                <option value="">— choose a user —</option>
+                {% for u in target_users %}
+                <option value="{{ u.id }}">{{ u.username }}{% if u.team %} ({{ u.team.name }}){% endif %}</option>
+                {% endfor %}
+              </select>
+              <small class="form-text text-muted">This override applies to this user only and wins over the Everyone window.</small>
+            </div>
+
+            <!-- Mode -->
+            <div class="form-group">
+              <label class="d-block font-weight-bold small">Mode</label>
+              <div class="btn-group btn-group-sm w-100" role="group">
+                <label class="btn btn-outline-success active mb-0">
+                  <input type="radio" name="mode" value="live" autocomplete="off" checked hidden>
+                  <i class="fas fa-play mr-1"></i> Live now
+                </label>
+                <label class="btn btn-outline-success mb-0">
+                  <input type="radio" name="mode" value="scheduled" autocomplete="off" hidden>
+                  <i class="fas fa-calendar-alt mr-1"></i> Scheduled
+                </label>
+              </div>
+            </div>
+
+            <!-- Start (scheduled only) -->
+            <div class="form-group" id="schedule-start-section" style="display:none;">
+              <label class="small">Start Date &amp; Time <span class="text-danger">*</span></label>
+              <input type="datetime-local" class="form-control" name="start_time" id="schedule-start-time">
+            </div>
+
+            <!-- End -->
+            <div class="form-group mb-0">
+              <label class="small">End Date &amp; Time <span class="text-danger" id="schedule-end-required" style="display:none;">*</span></label>
+              <input type="datetime-local" class="form-control" name="end_time" id="schedule-end-time">
+              <small class="form-text text-muted" id="schedule-end-hint">Optional for a live round — leave blank to stay open until you clear it.</small>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-info"><i class="fas fa-save mr-1"></i> Apply</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Live / Schedule modal ---
+    $('#scheduleModal').on('show.bs.modal', function(event) {
+      var btn = $(event.relatedTarget);
+      $('#schedule-round-name').text('Round: ' + btn.data('round-name'));
+      $('#scheduleForm').attr('action', '/admin/rounds/' + btn.data('round-id') + '/schedule');
+      // reset to defaults: everyone + live now
+      $('#scheduleForm')[0].reset();
+      $('input[name="audience"][value="everyone"]').prop('checked', true).closest('label').addClass('active').siblings().removeClass('active');
+      $('input[name="mode"][value="live"]').prop('checked', true).closest('label').addClass('active').siblings().removeClass('active');
+      syncAudience(); syncMode();
+    });
+
+    function syncAudience() {
+      var aud = $('input[name="audience"]:checked').val();
+      if (aud === 'user') { $('#schedule-user-section').show(); $('#schedule-user-select').prop('required', true); }
+      else { $('#schedule-user-section').hide(); $('#schedule-user-select').prop('required', false); }
+    }
+    function syncMode() {
+      var mode = $('input[name="mode"]:checked').val();
+      if (mode === 'scheduled') {
+        $('#schedule-start-section').show();
+        $('#schedule-start-time').prop('required', true);
+        $('#schedule-end-time').prop('required', true);
+        $('#schedule-end-required').show();
+        $('#schedule-end-hint').text('No answers accepted after this time.');
+      } else { // live
+        $('#schedule-start-section').hide();
+        $('#schedule-start-time').prop('required', false);
+        $('#schedule-end-time').prop('required', false);
+        $('#schedule-end-required').hide();
+        $('#schedule-end-hint').text('Optional for a live round — leave blank to stay open until you clear it.');
+      }
+    }
+    // keep Bootstrap button-group "active" class in sync and react to changes
+    $('input[name="audience"]').on('change', function() {
+      $(this).closest('label').addClass('active').siblings().removeClass('active'); syncAudience();
+    });
+    $('input[name="mode"]').on('change', function() {
+      $(this).closest('label').addClass('active').siblings().removeClass('active'); syncMode();
+    });
+    $('#scheduleForm').on('submit', function(e) {
+      if ($('input[name="audience"]:checked').val() === 'user' && !$('#schedule-user-select').val()) {
+        e.preventDefault(); alert('Please choose a user, or select Everyone.'); return;
+      }
+      if ($('input[name="mode"]:checked').val() === 'scheduled') {
+        var s = $('#schedule-start-time').val(), en = $('#schedule-end-time').val();
+        if (!s || !en) { e.preventDefault(); alert('Scheduled mode needs both a start and an end time.'); return; }
+        if (new Date(en) <= new Date(s)) { e.preventDefault(); alert('End time must be after the start time.'); return; }
+      }
+    });
+  </script>
 
   <script>
     // --- Timer modal open ---

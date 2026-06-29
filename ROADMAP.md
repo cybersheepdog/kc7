@@ -678,6 +678,17 @@ score recompute (#20), anti-cheat surfacing (#26).
     DB to be swapped in atomically on next startup (the live file is never overwritten under
     open connections; the current DB is auto-copied aside first). Admin-only and audited.*
 
+> **Round live/scheduling (everyone or a specific user)** — ✅ Done. A round can be set
+> **live now** or **scheduled** for a start–end window, targeting **everyone** or a
+> **single user**, via a new `round_schedules` side-table (auto-creates, no migration). A
+> `_round_window_for_user()` resolver layers per-user → everyone → the legacy `GameRound`
+> timer; the chosen window is honored both in `submit_answer` (gating) and the player views
+> (status badges/banners + countdown), and feeds the same early-solve decay scoring. Unlike
+> the legacy timer (end-only), windows set through this flow enforce the **start** too, so a
+> scheduled round stays closed until it opens; rounds with no override are byte-for-byte
+> unchanged. New routes `/admin/rounds/<id>/schedule` and `/schedule/clear` are
+> Admin+Facilitator and audited (`round.schedule` / `round.schedule_clear`).
+
 ---
 
 ## Real-world intel & attribution

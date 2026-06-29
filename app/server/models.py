@@ -593,6 +593,66 @@ class Participation(AuthBase):
         return '<Participation round=%r user=%r>' % (self.round_id, self.user_id)
 
 
+class RoundSchedule(AuthBase):
+    """
+    Per-round live/scheduled window that can target EVERYONE or a SPECIFIC user.
+
+    A round keeps its own legacy global window on ``GameRound`` (uses_timer/start_time/
+    end_time) untouched. This side-table layers the newer "set live / schedule" flow on
+    top, and is consulted FIRST when deciding whether a round is open for a given player:
+
+      * ``user_id IS NULL`` — a global override for the round (applies to everyone), used by
+        "set live / schedule for everyone".
+      * ``user_id = <id>``  — an override for just that one player (e.g. open early, or grant
+        extra time), which wins over the global override for that player.
+
+    Resolution order at submit/display time is: per-user row → global (NULL) row → the legacy
+    ``GameRound`` window. Unlike the legacy window (which only enforces the END), windows set
+    through this flow enforce BOTH ends, so "scheduled" actually keeps the round closed until
+    its start. ``end_time`` may be NULL for an open-ended "live now" window.
+
+    Side-table: auto-creates with db.create_all, no migration. A round with no rows here
+    behaves exactly as it did before this feature.
+    """
+    __tablename__  = "round_schedules"
+    __table_args__ = (
+        db.UniqueConstraint('round_id', 'user_id', name='uq_round_schedule_round_user'),
+    )
+
+    round_id   = db.Column(db.Integer, db.ForeignKey('game_rounds.id', ondelete='CASCADE'),
+                           nullable=False, index=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey('users.user_id', ondelete='CASCADE'),
+                           nullable=True, index=True)   # NULL = everyone
+    start_time = db.Column(db.DateTime, nullable=True)  # None only in transient states; set on create
+    end_time   = db.Column(db.DateTime, nullable=True)  # None = open-ended (live, no auto-close)
+    created_at = db.Column(db.DateTime, nullable=False)
+    created_by = db.Column(db.String(80), nullable=True)
+
+    round = db.relationship('GameRound', backref=db.backref('schedules', lazy='dynamic'))
+    user  = db.relationship('Users')
+
+    def __init__(self, round_id, user_id, start_time, end_time=None, created_by=None):
+        self.round_id   = round_id
+        self.user_id    = user_id            # None => everyone
+        self.start_time = start_time
+        self.end_time   = end_time
+        self.created_by = created_by
+        self.created_at = datetime.datetime.now()
+
+    def status_at(self, now=None):
+        """'pending' (before start), 'live' (within window), or 'ended' (past end)."""
+        now = now or datetime.datetime.now()
+        if self.start_time and now < self.start_time:
+            return "pending"
+        if self.end_time and now > self.end_time:
+            return "ended"
+        return "live"
+
+    def __repr__(self):
+        who = "everyone" if self.user_id is None else ("user=%r" % self.user_id)
+        return '<RoundSchedule round=%r %s>' % (self.round_id, who)
+
+
 ##########################################################
 # Manually-seeded malicious indicators for scoring
 ##########################################################

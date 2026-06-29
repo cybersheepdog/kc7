@@ -13,7 +13,7 @@ from sqlalchemy import asc
 from sqlalchemy.sql.expression import func, select
 
 # Import module models (i.e. Company, Employee, Actor, DNSRecord)
-from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame, UserBadge, NotebookEntry, DecoyIndicator, QueryLog
+from app.server.models import db, Team, Users, Roles, GameSession, Report, Challenge, Solve, AnswerAttempt, GameRound, Participation, MaliciousIndicator, ADXConfig, ChallengeGating, HintReveal, ScoreAdjustment, ScheduledGame, UserBadge, NotebookEntry, DecoyIndicator, QueryLog, RoundSchedule
 from app.server.modules.audit.audit_log import record_admin_action
 from app.server.modules.organization.Company import Company, Employee
 from app.server.modules.clock.Clock import Clock
@@ -78,16 +78,68 @@ def calculate_round_time_weighted_points(base_points, game_round, solved_at=None
         if not game_round.start_time or not game_round.end_time:
             return base_points
         now = solved_at or datetime.now()
-        window_secs = (game_round.end_time - game_round.start_time).total_seconds()
-        if window_secs <= 0:
-            return base_points
-        elapsed_secs = (now - game_round.start_time).total_seconds()
-        fraction = max(0.0, min(1.0, elapsed_secs / window_secs))
-        decay = 1.0 - fraction          # 1.0 at start, 0.0 at end
-        return base_points + int(base_points * decay)
+        return _decay_points(base_points, game_round.start_time, game_round.end_time, now)
     except Exception as e:
         print("calculate_round_time_weighted_points: " + str(e))
         return base_points
+
+
+def _decay_points(base_points, start_time, end_time, now):
+    """
+    Shared early-solve scoring: 2x base at the window start, linearly decaying to 1x at the
+    end. Used by both the legacy round window and the newer per-user/everyone schedule
+    windows so they score identically. Falls back to base_points for an undefined or
+    zero-length window (e.g. an open-ended 'live' window with no end).
+    """
+    if not start_time or not end_time:
+        return base_points
+    window_secs = (end_time - start_time).total_seconds()
+    if window_secs <= 0:
+        return base_points
+    elapsed_secs = (now - start_time).total_seconds()
+    fraction = max(0.0, min(1.0, elapsed_secs / window_secs))
+    decay = 1.0 - fraction              # 1.0 at start, 0.0 at end
+    return base_points + int(base_points * decay)
+
+
+def _round_window_for_user(game_round, user_id, now=None):
+    """
+    Resolve the effective live/scheduled window for ``user_id`` in ``game_round``.
+
+    Checks the newer RoundSchedule overrides first (per-user, then the everyone/NULL row),
+    and falls back to the round's legacy GameRound window if there is no schedule. Returns a
+    dict::
+
+        {source, status, start, end, enforce_start}
+
+    where ``source`` is 'schedule' | 'legacy' | 'none', ``status`` is 'pending' | 'live' |
+    'ended', and ``enforce_start`` is True only for schedule-sourced windows (so legacy
+    rounds keep their original END-only behavior — they never report 'pending').
+    """
+    now = now or datetime.now()
+    sched = None
+    try:
+        if user_id is not None:
+            sched = RoundSchedule.query.filter_by(round_id=game_round.id, user_id=user_id).first()
+        if sched is None:
+            sched = RoundSchedule.query.filter_by(round_id=game_round.id, user_id=None).first()
+    except Exception as e:
+        print("_round_window_for_user lookup: " + str(e))
+        sched = None
+
+    if sched is not None:
+        return {"source": "schedule", "status": sched.status_at(now),
+                "start": sched.start_time, "end": sched.end_time, "enforce_start": True}
+
+    # Legacy fallback — unchanged behavior: only the end is enforced.
+    if game_round.uses_timer and game_round.end_time:
+        status = "ended" if now > game_round.end_time else "live"
+        return {"source": "legacy", "status": status,
+                "start": game_round.start_time, "end": game_round.end_time, "enforce_start": False}
+
+    # No timer at all → always open.
+    return {"source": "none", "status": "live",
+            "start": game_round.start_time, "end": game_round.end_time, "enforce_start": False}
 
 
 def get_malicious_indicators():
@@ -1265,20 +1317,40 @@ def submit_answer():
         if not challenge:
             return jsonify(correct=False, message="Challenge not found.")
 
-        # Reject if global session timer OR per-round timer has expired
+        # Reject if the global session timer has expired.
+        _now = datetime.now()
         _gs = db.session.get(GameSession, 1)
-        _global_expired = bool(_gs and _gs.uses_timer and _gs.end_time and datetime.now() > _gs.end_time)
-        _round_expired = False
-        if challenge.round_id:
-            _rnd = db.session.get(GameRound, challenge.round_id)
-            if _rnd and _rnd.uses_timer and _rnd.end_time and datetime.now() > _rnd.end_time:
-                _round_expired = True
-        if _global_expired or _round_expired:
+        _global_expired = bool(_gs and _gs.uses_timer and _gs.end_time and _now > _gs.end_time)
+        if _global_expired:
             return jsonify(correct=False, already_solved=False, points_earned=0,
                            user_score=current_user.score or 0,
                            team_score=current_user.team.score or 0,
                            message="This session has ended. No more answers can be submitted.",
                            timer_expired=True)
+
+        # Reject if THIS round is closed for this player — honoring any per-user / everyone
+        # live-or-scheduled override, and otherwise the round's legacy end time. A schedule
+        # set through the new flow also enforces the START (status 'pending'); legacy windows
+        # never report 'pending', so their original end-only behavior is unchanged.
+        _round_window = None
+        if challenge.round_id:
+            _rnd = db.session.get(GameRound, challenge.round_id)
+            if _rnd:
+                _round_window = _round_window_for_user(_rnd, current_user.id, _now)
+                if _round_window["status"] == "ended":
+                    return jsonify(correct=False, already_solved=False, points_earned=0,
+                                   user_score=current_user.score or 0,
+                                   team_score=current_user.team.score or 0,
+                                   message="This round has ended. No more answers can be submitted.",
+                                   timer_expired=True)
+                if _round_window["status"] == "pending":
+                    _starts = _round_window["start"]
+                    _when = _starts.strftime("%Y-%m-%d %H:%M") if _starts else "soon"
+                    return jsonify(correct=False, already_solved=False, points_earned=0,
+                                   user_score=current_user.score or 0,
+                                   team_score=current_user.team.score or 0,
+                                   message="This round hasn't started yet (opens " + _when + ").",
+                                   round_pending=True)
 
         # Reject duplicate solve
         existing = Solve.query.filter_by(
@@ -1340,10 +1412,17 @@ def submit_answer():
                 first_blood_pct=current_app.config.get("FIRST_BLOOD_BONUS_PCT", 0),
             )["total"]
         elif challenge.round_id:
-            _rnd_for_score = db.session.get(GameRound, challenge.round_id)
-            points_earned = calculate_round_time_weighted_points(
-                challenge.value, _rnd_for_score, solved_at=now
-            )
+            # Score against the effective window for this player: a live/scheduled override
+            # if one applies, otherwise the round's legacy window (unchanged).
+            if _round_window and _round_window["source"] == "schedule":
+                points_earned = _decay_points(
+                    challenge.value, _round_window["start"], _round_window["end"], now
+                )
+            else:
+                _rnd_for_score = db.session.get(GameRound, challenge.round_id)
+                points_earned = calculate_round_time_weighted_points(
+                    challenge.value, _rnd_for_score, solved_at=now
+                )
         else:
             game_session  = db.session.get(GameSession, 1)
             points_earned = calculate_time_weighted_points(challenge.value, game_session)
@@ -1763,7 +1842,13 @@ def rounds():
     my_round_ids = {p.round_id for p in my_participations}
     my_rounds = [db.session.get(GameRound, rid) for rid in my_round_ids if db.session.get(GameRound, rid)]
     my_rounds.sort(key=lambda r: r.name)
-    return render_template("main/rounds.html", my_rounds=my_rounds)
+    # Effective live/scheduled status for THIS player per round (override-aware).
+    _now = datetime.now()
+    round_state = {}
+    for r in my_rounds:
+        w = _round_window_for_user(r, current_user.id, _now)
+        round_state[r.id] = {"status": w["status"], "start": w["start"], "end": w["end"]}
+    return render_template("main/rounds.html", my_rounds=my_rounds, round_state=round_state)
 
 
 @main.route("/rounds/join", methods=["POST"])
@@ -1832,6 +1917,15 @@ def round_challenges(round_id):
         .filter(Solve.user_id == current_user.id)\
         .scalar() or 0
 
+    # Effective live/scheduled window for THIS player (per-user override > everyone > legacy).
+    _now = datetime.now()
+    _w = _round_window_for_user(game_round, current_user.id, _now)
+    round_status   = _w["status"]                       # pending | live | ended
+    round_locked   = round_status in ("pending", "ended")
+    effective_start = _w["start"]
+    effective_end   = _w["end"]
+    effective_end_ts = int(effective_end.timestamp() * 1000) if effective_end else None
+
     return render_template(
         "main/round_challenges.html",
         game_round=game_round,
@@ -1839,7 +1933,12 @@ def round_challenges(round_id):
         categories=categories,
         solved_ids=solved_ids,
         user_round_score=user_round_score,
-        now=datetime.now(),
+        now=_now,
+        round_status=round_status,
+        round_locked=round_locked,
+        effective_start=effective_start,
+        effective_end=effective_end,
+        effective_end_ts=effective_end_ts,
     )
 
 
@@ -2023,9 +2122,27 @@ def profile(username):
 @roles_accepted("Admin", "Facilitator")
 @login_required
 def manage_rounds():
-    """Admin: list and manage all game rounds."""
+    """Admin / Facilitator: list and manage all game rounds, incl. live/scheduled overrides."""
+    now = datetime.now()
     round_list = GameRound.query.order_by(GameRound.created_at.desc()).all()
-    return render_template("admin/manage_rounds.html", rounds=round_list, now=datetime.now())
+    # Players who can be targeted by a per-user schedule (exclude the admin team).
+    target_users = Users.query.filter(Users.team_id != 1).order_by(Users.username).all()
+    # Active overrides per round, for display (everyone row first, then by username).
+    schedules_by_round = {}
+    for sc in RoundSchedule.query.all():
+        schedules_by_round.setdefault(sc.round_id, []).append({
+            "id": sc.id,
+            "is_everyone": sc.user_id is None,
+            "username": ("Everyone" if sc.user_id is None
+                         else (sc.user.username if sc.user else "user %d" % sc.user_id)),
+            "start": sc.start_time,
+            "end": sc.end_time,
+            "status": sc.status_at(now),
+        })
+    for rid in schedules_by_round:
+        schedules_by_round[rid].sort(key=lambda s: (not s["is_everyone"], s["username"].lower()))
+    return render_template("admin/manage_rounds.html", rounds=round_list, now=now,
+                           target_users=target_users, schedules_by_round=schedules_by_round)
 
 
 @main.route("/admin/rounds/create", methods=["POST"])
@@ -2120,6 +2237,110 @@ def toggle_round_timer(round_id):
     except Exception as e:
         print("toggle_round_timer error: " + str(e))
         flash("Failed to toggle timer: " + str(e), "error")
+    return redirect(url_for("main.manage_rounds"))
+
+
+@main.route("/admin/rounds/<int:round_id>/schedule", methods=["POST"])
+@roles_accepted("Admin", "Facilitator")
+@login_required
+def set_round_schedule(round_id):
+    """
+    Set a round LIVE now, or SCHEDULE a window for it, targeting EVERYONE or a SPECIFIC user.
+    Stored in the RoundSchedule side-table and layered on top of the round's legacy window:
+    a per-user row wins over the everyone row, which wins over the legacy GameRound window.
+    """
+    gr = db.session.get(GameRound, round_id)
+    if not gr:
+        flash("Round not found.", "error")
+        return redirect(url_for("main.manage_rounds"))
+    try:
+        mode      = (request.form.get("mode") or "scheduled").strip().lower()     # live | scheduled
+        audience  = (request.form.get("audience") or "everyone").strip().lower()  # everyone | user
+        start_raw = (request.form.get("start_time") or "").strip()
+        end_raw   = (request.form.get("end_time") or "").strip()
+
+        # Resolve the target (None = everyone)
+        target_user = None
+        if audience == "user":
+            uid_raw = (request.form.get("user_id") or "").strip()
+            if not uid_raw.isdigit():
+                flash("Pick a user to target, or choose Everyone.", "error")
+                return redirect(url_for("main.manage_rounds"))
+            target_user = db.session.get(Users, int(uid_raw))
+            if not target_user:
+                flash("Selected user not found.", "error")
+                return redirect(url_for("main.manage_rounds"))
+
+        def _parse(v):
+            try:
+                return datetime.strptime(v, "%Y-%m-%dT%H:%M")
+            except ValueError:
+                return None
+
+        if mode == "live":
+            start_dt = datetime.now()
+            end_dt   = _parse(end_raw) if end_raw else None   # blank = open-ended live
+        else:  # scheduled
+            start_dt = _parse(start_raw)
+            end_dt   = _parse(end_raw)
+            if not start_dt or not end_dt:
+                flash("Scheduled mode needs a valid start and end date/time.", "error")
+                return redirect(url_for("main.manage_rounds"))
+        if start_dt and end_dt and end_dt <= start_dt:
+            flash("End time must be after the start time.", "error")
+            return redirect(url_for("main.manage_rounds"))
+
+        target_uid = target_user.id if target_user else None
+        sched = RoundSchedule.query.filter_by(round_id=round_id, user_id=target_uid).first()
+        if sched:
+            sched.start_time = start_dt
+            sched.end_time   = end_dt
+            sched.created_by = current_user.username
+            sched.created_at = datetime.now()
+        else:
+            db.session.add(RoundSchedule(round_id=round_id, user_id=target_uid,
+                                         start_time=start_dt, end_time=end_dt,
+                                         created_by=current_user.username))
+        db.session.commit()
+
+        who = "everyone" if target_user is None else target_user.username
+        record_admin_action("round.schedule", target=gr.name,
+                            detail="mode=%s audience=%s start=%s end=%s" % (mode, who, start_dt, end_dt))
+        verb = "set live" if mode == "live" else "scheduled"
+        flash("Round \"%s\" %s for %s." % (gr.name, verb, who), "success")
+    except Exception as e:
+        db.session.rollback()
+        print("set_round_schedule error: " + str(e))
+        flash("Failed to set schedule: " + str(e), "error")
+    return redirect(url_for("main.manage_rounds"))
+
+
+@main.route("/admin/rounds/<int:round_id>/schedule/clear", methods=["POST"])
+@roles_accepted("Admin", "Facilitator")
+@login_required
+def clear_round_schedule(round_id):
+    """Remove a live/scheduled override by its id, reverting that audience to the next layer
+    down (the everyone override, or the round's legacy window)."""
+    gr = db.session.get(GameRound, round_id)
+    if not gr:
+        flash("Round not found.", "error")
+        return redirect(url_for("main.manage_rounds"))
+    try:
+        sched_id = int(request.form.get("schedule_id", 0) or 0)
+        sched = db.session.get(RoundSchedule, sched_id)
+        if sched and sched.round_id == round_id:
+            who = ("everyone" if sched.user_id is None
+                   else (sched.user.username if sched.user else "user %d" % sched.user_id))
+            db.session.delete(sched)
+            db.session.commit()
+            record_admin_action("round.schedule_clear", target=gr.name, detail="audience=%s" % who)
+            flash("Cleared the override for %s on \"%s\"." % (who, gr.name), "success")
+        else:
+            flash("Override not found.", "warning")
+    except Exception as e:
+        db.session.rollback()
+        print("clear_round_schedule error: " + str(e))
+        flash("Failed to clear override: " + str(e), "error")
     return redirect(url_for("main.manage_rounds"))
 
 

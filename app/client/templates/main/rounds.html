@@ -53,13 +53,15 @@
                   <small class="text-muted">
                     {{ r.challenge_count }} challenge{{ 's' if r.challenge_count != 1 else '' }}
                     &middot; {{ r.participant_count }} participant{{ 's' if r.participant_count != 1 else '' }}
-                    {% if r.uses_timer and r.end_time %}
-                      &middot;
-                      {% if r.is_expired %}
-                        <span class="text-danger">Ended {{ r.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
-                      {% else %}
-                        <span class="text-success">Ends {{ r.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
-                      {% endif %}
+                    {% set st = round_state.get(r.id) %}
+                    {% if st and st.status == 'ended' %}
+                      &middot; <span class="text-danger">Ended{% if st.end %} {{ st.end.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span>
+                    {% elif st and st.status == 'pending' %}
+                      &middot; <span class="text-warning">Opens{% if st.start %} {{ st.start.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span>
+                    {% elif st and st.status == 'live' and st.end %}
+                      &middot; <span class="text-success">Ends {{ st.end.strftime('%Y-%m-%d %H:%M') }}</span>
+                    {% elif st and st.status == 'live' and st.start and (r.schedules.count() if r.schedules else 0) %}
+                      &middot; <span class="text-success">Live</span>
                     {% endif %}
                   </small>
                 </div>

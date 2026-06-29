@@ -169,7 +169,7 @@ When the console is enabled, facilitators get a **Query Feed** 🆕 (`/admin/que
 Every player gets a private **investigation notebook** (`/notebook`, in the sidebar) — the analyst workspace the game was missing. It's a three-pane scratchpad: **Notes** for findings, **Indicators** for stashing IOCs as you pivot (the type — domain / IP / email / hash — is auto-detected and each has a one-click copy button), and a **Timeline** for reconstructing the intrusion (events sort by the time you enter). Add/remove entries inline without leaving the page. It's completely private to each player and has **no effect on scoring** — purely a place to think. Stored in a `notebook_entries` side-table scoped to the user.
 
 #### Rounds (Named Game Sessions)
-Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events.
+Players join named rounds using a password code. Each round has its own scoped challenge set and separate leaderboard, making it easy to run isolated sessions for different groups or events. A round can be **set live or scheduled** 🆕 — for **everyone** or for a **specific user** — so you can open a round on demand, schedule a window in advance, open it early for one person, or grant someone extra time. Scheduled windows keep the round closed until the start and reopen scoring within the window; per-user windows override the everyone window for that player.
 
 #### Leaderboard
 The Teams page shows a ranked leaderboard with a horizontal bar chart, split across Teams, Players, and **Progress** tabs. Rankings are sorted by score with tie-breaking by earliest score time, and the live Teams/Players views now show **rank-movement deltas** (▲/▼ since the last update, "NEW" on first appearance). The board refreshes itself automatically: by default it polls every 10 seconds, and a pulsing **LIVE** badge shows it's updating. For near-real-time **push** updates (so a whole room sees movement the instant a score lands), enable `LIVE_SCORE_SSE_ENABLED` 🆕 in `config.py` — the page then streams updates over Server-Sent Events (`/score_stream`) and automatically falls back to polling if the stream is unavailable. (SSE needs a threaded/multi-worker server such as gunicorn or `flask run` with threading.) Each player row also shows a 🆕 **badge-count chip** that links to that player's badge showcase (`/u/<name>/badges`), and an 🆕 **analyst rank title** beneath the name (see below).
@@ -290,6 +290,7 @@ This activity surfaces across new endpoint and cloud log sources (`SecurityEvent
 #### Manage Rounds (`/admin/rounds`)
 - Create named rounds with a password join code
 - Set and toggle per-round timers independently of the global session timer
+- **Live / Schedule** 🆕 — set a round live now or schedule a start–end window, targeting **Everyone** or a **specific user**. Per-user overrides win over the everyone window, which wins over the round's legacy timer. Open-ended "live now" stays open until cleared; scheduled windows enforce both start and end. Active overrides are listed per round with one-click clear, and the action is available to **Facilitators** as well as Admins. (Legacy rounds with no override behave exactly as before — end-only.)
 - Delete rounds
 
 #### Malicious Indicators (`/admin/manage_indicators`)
@@ -438,6 +439,7 @@ Validation is dependency-free and additive: valid configs behave exactly as befo
 | `admin_audit` 🆕 | Append-only log of privileged admin actions |
 | `game_rounds` | Named password-protected game sessions |
 | `participations` | Player ↔ round membership |
+| `round_schedules` 🆕 | Per-round live/scheduled windows (everyone or a specific user) |
 | `malicious_indicators` | Admin-seeded indicators for scoring |
 | `adx_config` | GUI-managed ADX connection settings |
 
